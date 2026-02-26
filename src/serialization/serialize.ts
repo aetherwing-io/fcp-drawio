@@ -3,6 +3,8 @@ import type {
   StyleSet, EdgeStyleSet, ArrowType, ShapeType,
 } from "../types/index.js";
 import { NODE_TYPES } from "../lib/node-types.js";
+import { computeAllEdgeRenderInfo } from "./connector-intelligence.js";
+import type { EdgeRenderInfo } from "./connector-intelligence.js";
 
 // ── XML entity escaping ─────────────────────────────────────
 
@@ -170,6 +172,51 @@ function isKnownEdgeStyleKey(key: string): boolean {
   return KNOWN_EDGE_STYLE_KEYS.has(key);
 }
 
+// ── Edge style + port helpers ────────────────────────────────
+
+/**
+ * Build edge style string, injecting port exit/entry points if provided by connector intelligence.
+ */
+function buildEdgeStyleStringWithPorts(edge: Edge, renderInfo?: EdgeRenderInfo): string {
+  const base = buildEdgeStyleString(edge);
+  if (!renderInfo?.ports) return base;
+
+  const ports = renderInfo.ports;
+  // Remove trailing semicolon, append port styles, re-add semicolon
+  const withoutTrailing = base.replace(/;$/, "");
+  return `${withoutTrailing};exitX=${ports.exitX};exitY=${ports.exitY};exitDx=0;exitDy=0;entryX=${ports.entryX};entryY=${ports.entryY};entryDx=0;entryDy=0;`;
+}
+
+/**
+ * Build inner geometry content for an edge (waypoints and/or label offset).
+ * Returns null if the geometry should be self-closing.
+ */
+function buildEdgeGeometryInner(edge: Edge, renderInfo?: EdgeRenderInfo): string | null {
+  const parts: string[] = [];
+
+  // Waypoints
+  if (edge.waypoints.length > 0) {
+    const wpLines = edge.waypoints.map(
+      (wp) => `            <mxPoint x="${wp.x}" y="${wp.y}"/>`
+    );
+    parts.push(
+      `          <Array as="points">\n` +
+      wpLines.join("\n") + "\n" +
+      `          </Array>`
+    );
+  }
+
+  // Label offset
+  if (renderInfo && (renderInfo.labelOffsetX !== 0 || renderInfo.labelOffsetY !== 0)) {
+    parts.push(
+      `          <mxPoint x="${renderInfo.labelOffsetX}" y="${renderInfo.labelOffsetY}" as="offset"/>`
+    );
+  }
+
+  if (parts.length === 0) return null;
+  return parts.join("\n");
+}
+
 // ── Serialization ───────────────────────────────────────────
 
 function serializePage(page: Page): string {
@@ -222,32 +269,28 @@ function serializePage(page: Page): string {
     );
   }
 
+  // Pre-compute connector intelligence for all edges
+  const edgeRenderInfos = computeAllEdgeRenderInfo(page);
+
   // Edges
   for (const [, edge] of page.edges) {
-    const styleStr = buildEdgeStyleString(edge);
+    const renderInfo = edgeRenderInfos.get(edge.id);
+    const styleStr = buildEdgeStyleStringWithPorts(edge, renderInfo);
     const labelAttr = edge.label ? ` value="${escapeXml(edge.label)}"` : ` value=""`;
 
     // Determine the layer for the edge (use the source shape's layer)
     const sourcePage = page.shapes.get(edge.sourceId);
     const edgeParent = sourcePage?.layer ?? page.defaultLayer;
 
-    let geomContent = `relative="1" as="geometry"`;
-    // Add waypoints if present
-    if (edge.waypoints.length > 0) {
-      const wpLines = edge.waypoints.map(
-        (wp) => `          <mxPoint x="${wp.x}" y="${wp.y}"/>`
-      );
-      geomContent = `relative="1" as="geometry">\n` +
-        `          <Array as="points">\n` +
-        wpLines.join("\n") + "\n" +
-        `          </Array>\n` +
-        `        </mxGeometry`;
-    }
+    // Build geometry inner content
+    const geomInner = buildEdgeGeometryInner(edge, renderInfo);
 
-    if (edge.waypoints.length > 0) {
+    if (geomInner) {
       cells.push(
         `      <mxCell id="${escapeXml(edge.id)}"${labelAttr} style="${escapeXml(styleStr)}" edge="1" source="${escapeXml(edge.sourceId)}" target="${escapeXml(edge.targetId)}" parent="${escapeXml(edgeParent)}">\n` +
-        `        <mxGeometry ${geomContent}>\n` +
+        `        <mxGeometry relative="1" as="geometry">\n` +
+        geomInner + "\n" +
+        `        </mxGeometry>\n` +
         `      </mxCell>`
       );
     } else {

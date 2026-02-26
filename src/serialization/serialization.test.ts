@@ -650,3 +650,55 @@ describe("round-trip — flowDirection", () => {
     expect(restored.pages[0].flowDirection).toBeUndefined();
   });
 });
+
+describe("round-trip — custom types and themes", () => {
+  it("persists custom types through serialize/deserialize", () => {
+    model.defineCustomType("payment-svc", "svc", { theme: "purple", badge: "PCI" });
+    model.addShape("A", "svc");
+
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).toContain("studio-meta");
+    expect(xml).toContain("payment-svc");
+
+    const restored = deserializeDiagram(xml);
+    expect(restored.customTypes.size).toBe(1);
+    const ct = restored.customTypes.get("payment-svc")!;
+    expect(ct.base).toBe("svc");
+    expect(ct.theme).toBe("purple");
+    expect(ct.badge).toBe("PCI");
+  });
+
+  it("persists custom themes through serialize/deserialize", () => {
+    model.defineCustomTheme("critical", "#f8cecc", "#990000", "#660000");
+    model.addShape("A", "svc");
+
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).toContain("studio-meta");
+
+    const restored = deserializeDiagram(xml);
+    expect(restored.customThemes.size).toBe(1);
+    const theme = restored.customThemes.get("critical")!;
+    expect(theme.fill).toBe("#f8cecc");
+    expect(theme.stroke).toBe("#990000");
+    expect(theme.fontColor).toBe("#660000");
+  });
+
+  it("omits studio-meta when no custom types or themes", () => {
+    model.addShape("A", "svc");
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).not.toContain("studio-meta");
+  });
+
+  it("handles both custom types and themes together", () => {
+    model.defineCustomType("k8s-pod", "svc", { theme: "blue", badge: "K8s" });
+    model.defineCustomTheme("alert", "#ff0000", "#cc0000");
+    model.addShape("A", "svc");
+
+    const xml = serializeDiagram(model.diagram);
+    const restored = deserializeDiagram(xml);
+    expect(restored.customTypes.size).toBe(1);
+    expect(restored.customThemes.size).toBe(1);
+    expect(restored.customTypes.get("k8s-pod")!.badge).toBe("K8s");
+    expect(restored.customThemes.get("alert")!.fill).toBe("#ff0000");
+  });
+});

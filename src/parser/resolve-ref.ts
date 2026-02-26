@@ -192,6 +192,25 @@ function resolveSelector(selector: string, registry: ReferenceRegistry, model: D
     return { kind: "multiple", shapes, message: `@layer:${layerName}: ${shapes.length} shapes` };
   }
 
+  if (selector.startsWith("@connected:")) {
+    const innerRef = selector.slice(11);
+    // Resolve the inner reference to find the anchor shape
+    const innerResult = resolveRef(innerRef, registry, model);
+    if (innerResult.kind === "none") {
+      return { kind: "none", message: `@connected:${innerRef} — ${innerResult.message}` };
+    }
+    if (innerResult.kind === "multiple") {
+      return { kind: "none", message: `@connected:${innerRef} — ambiguous: ${innerResult.message}` };
+    }
+    // innerResult.kind === "single" or "group"
+    if (innerResult.kind === "group") {
+      return { kind: "none", message: `@connected:${innerRef} — cannot use group as anchor` };
+    }
+    const connected = registry.getConnectedShapes(innerResult.shape.id, page);
+    if (connected.length === 0) return { kind: "none", message: `@connected:${innerRef} matched 0 shapes` };
+    return { kind: "multiple", shapes: connected, message: `@connected:${innerRef}: ${connected.length} shapes` };
+  }
+
   return { kind: "none", message: `unknown selector "${selector}"` };
 }
 

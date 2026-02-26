@@ -217,3 +217,53 @@ describe("resolveRef — @orphan selector", () => {
     }
   });
 });
+
+describe("resolveRef — @connected selector", () => {
+  it("resolves @connected:REF to neighbor shapes", () => {
+    const s1 = model.addShape("Auth", "svc");
+    const s2 = model.addShape("UserDB", "db");
+    const s3 = model.addShape("Cache", "db");
+    model.addShape("Orphan", "svc");
+    model.addEdge(s1.id, s2.id);
+    model.addEdge(s1.id, s3.id);
+    const result = resolve("@connected:Auth");
+    expect(result.kind).toBe("multiple");
+    if (result.kind === "multiple") {
+      expect(result.shapes).toHaveLength(2);
+      const labels = result.shapes.map(s => s.label).sort();
+      expect(labels).toEqual(["Cache", "UserDB"]);
+    }
+  });
+
+  it("returns empty when shape has no connections", () => {
+    model.addShape("Lonely", "svc");
+    const result = resolve("@connected:Lonely");
+    expect(result.kind).toBe("none");
+    if (result.kind === "none") {
+      expect(result.message).toContain("matched 0");
+    }
+  });
+
+  it("reports error for unknown inner ref", () => {
+    const result = resolve("@connected:Nonexistent");
+    expect(result.kind).toBe("none");
+    if (result.kind === "none") {
+      expect(result.message).toContain("@connected:Nonexistent");
+    }
+  });
+
+  it("includes both incoming and outgoing neighbors", () => {
+    const s1 = model.addShape("Source", "svc");
+    const s2 = model.addShape("Middle", "svc");
+    const s3 = model.addShape("Target", "svc");
+    model.addEdge(s1.id, s2.id);
+    model.addEdge(s2.id, s3.id);
+    const result = resolve("@connected:Middle");
+    expect(result.kind).toBe("multiple");
+    if (result.kind === "multiple") {
+      expect(result.shapes).toHaveLength(2);
+      const labels = result.shapes.map(s => s.label).sort();
+      expect(labels).toEqual(["Source", "Target"]);
+    }
+  });
+});

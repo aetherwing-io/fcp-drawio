@@ -342,6 +342,56 @@ describe("IntentLayer — define custom type", async () => {
   });
 });
 
+describe("IntentLayer — define custom theme", async () => {
+  it("defines a custom theme", async () => {
+    const results = await layer.executeOps([
+      "define theme critical fill:#f8cecc stroke:#990000",
+    ]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("critical");
+    expect(results[0].message).toContain("#f8cecc");
+    expect(layer.model.diagram.customThemes.size).toBe(1);
+  });
+
+  it("includes custom themes in help output", async () => {
+    await layer.executeOps([
+      "define theme critical fill:#f8cecc stroke:#990000",
+    ]);
+    const help = layer.getHelp();
+    expect(help).toContain("CUSTOM THEMES:");
+    expect(help).toContain("critical");
+  });
+
+  it("custom theme is usable in style operations", async () => {
+    await layer.executeOps([
+      "define theme critical fill:#f8cecc stroke:#990000",
+      "add svc Alert theme:critical",
+    ]);
+    const shape = [...layer.model.getActivePage().shapes.values()][0];
+    expect(shape.style.fillColor).toBe("#f8cecc");
+    expect(shape.style.strokeColor).toBe("#990000");
+  });
+});
+
+describe("IntentLayer — model-map generation", async () => {
+  it("generates NODE TYPES from registry", () => {
+    const help = layer.getHelp();
+    expect(help).toContain("NODE TYPES:");
+    expect(help).toContain("svc");
+    expect(help).toContain("db");
+    expect(help).toContain("api");
+    expect(help).toContain("rounded rectangle");
+    expect(help).toContain("cylinder");
+  });
+
+  it("generates THEMES from registry", () => {
+    const help = layer.getHelp();
+    expect(help).toContain("THEMES (fill / stroke):");
+    expect(help).toContain("#dae8fc");
+    expect(help).toContain("#6c8ebf");
+  });
+});
+
 describe("IntentLayer — remove", async () => {
   it("removes a shape", async () => {
     await layer.executeOps(["add svc AuthService"]);
@@ -382,6 +432,64 @@ describe("IntentLayer — page operations", async () => {
     const switchResult = await layer.executeOps(["page switch Page-1"]);
     expect(switchResult[0].success).toBe(true);
     expect(layer.model.getActivePage().name).toBe("Page-1");
+  });
+
+  it("lists all pages with shape counts", async () => {
+    await layer.executeOps(["add svc A", "add svc B"]);
+    await layer.executeOps(["page add Page-2"]);
+    await layer.executeOps(["add svc C"]);
+    const results = await layer.executeOps(["page list"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("Page-1");
+    expect(results[0].message).toContain("Page-2");
+    expect(results[0].message).toContain("active");
+  });
+});
+
+describe("IntentLayer — layer operations", async () => {
+  it("creates a layer", async () => {
+    const results = await layer.executeOps(['layer create Background']);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("Background");
+    const page = layer.model.getActivePage();
+    expect(page.layers).toHaveLength(2);
+  });
+
+  it("switches the active layer", async () => {
+    await layer.executeOps(['layer create Background']);
+    const results = await layer.executeOps(['layer switch Background']);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("switched to layer Background");
+    const page = layer.model.getActivePage();
+    const bgLayer = page.layers.find(l => l.name === "Background")!;
+    expect(page.defaultLayer).toBe(bgLayer.id);
+  });
+
+  it("reports error for switching to unknown layer", async () => {
+    const results = await layer.executeOps(['layer switch Nonexistent']);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown layer");
+  });
+
+  it("lists all layers with status markers", async () => {
+    await layer.executeOps(['layer create Background']);
+    await layer.executeOps(['layer hide Background']);
+    const results = await layer.executeOps(['layer list']);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("Default");
+    expect(results[0].message).toContain("active");
+    expect(results[0].message).toContain("Background");
+    expect(results[0].message).toContain("hidden");
+  });
+
+  it("new shapes go to the active layer", async () => {
+    await layer.executeOps(['layer create Background']);
+    await layer.executeOps(['layer switch Background']);
+    await layer.executeOps(['add svc TestShape']);
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    const bgLayer = page.layers.find(l => l.name === "Background")!;
+    expect(shape.layer).toBe(bgLayer.id);
   });
 });
 
@@ -585,7 +693,8 @@ describe("IntentLayer — layout", () => {
     const posChanged = aAfterLayout.bounds.x !== 100 || aAfterLayout.bounds.y !== 200;
     expect(posChanged).toBe(true);
 
-    // Undo all layout events (one per shape repositioned)
+    // Undo all layout events (one per shape repositioned + flow direction change)
+    layer.executeSession("undo");
     layer.executeSession("undo");
     layer.executeSession("undo");
 

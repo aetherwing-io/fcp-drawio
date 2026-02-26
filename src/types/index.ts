@@ -189,6 +189,7 @@ export interface Diagram {
   pages: Page[];
   activePage: string; // page ID
   customTypes: Map<string, CustomType>;
+  customThemes: Map<string, CustomTheme>;
   metadata: DiagramMetadata;
 }
 
@@ -206,6 +207,10 @@ export type DiagramEvent =
   | { type: "group_dissolved"; group: Group }
   | { type: "page_added"; page: Page }
   | { type: "page_removed"; page: Page }
+  | { type: "layer_created"; layer: Layer; pageId: string }
+  | { type: "layer_modified"; pageId: string; layerId: string; before: Partial<Layer>; after: Partial<Layer> }
+  | { type: "flow_direction_changed"; pageId: string; before: string | undefined; after: string }
+  | { type: "title_changed"; before: string; after: string }
   | { type: "checkpoint"; name: string; eventIndex: number };
 
 export interface EventLog {
@@ -230,8 +235,6 @@ export type Verb =
   | "swap"
   | "layout"
   | "orient"
-  | "align"
-  | "distribute"
   | "group"
   | "ungroup"
   | "layer"

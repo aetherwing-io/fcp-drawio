@@ -1,37 +1,63 @@
-import type { CustomType } from "../types/index.js";
+import type { CustomType, CustomTheme, ShapeType } from "../types/index.js";
+import { NODE_TYPES } from "../lib/node-types.js";
+import { THEMES } from "../lib/themes.js";
+import type { ThemeName } from "../types/index.js";
 
-const MODEL_MAP_BASE = `DRAW.IO STUDIO — MODEL MAP
+/**
+ * Generate the NODE TYPES section from the runtime registry.
+ * Matches the existing compact format: "  shorthand    description"
+ */
+function generateNodeTypesSection(): string {
+  const lines: string[] = [];
+  for (const [name, def] of Object.entries(NODE_TYPES) as [ShapeType, typeof NODE_TYPES[ShapeType]][]) {
+    lines.push(`  ${name.padEnd(10)} ${def.description.toLowerCase()}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Generate the THEMES section from the runtime registry.
+ * Pairs themes on the same line for compactness.
+ */
+function generateThemesSection(): string {
+  const entries = Object.entries(THEMES) as [ThemeName, typeof THEMES[ThemeName]][];
+  const lines: string[] = [];
+
+  for (let i = 0; i < entries.length; i += 2) {
+    const [name1, colors1] = entries[i];
+    let line = `  ${name1.padEnd(10)} ${colors1.fill} / ${colors1.stroke}`;
+    if (colors1.fontColor) line += ` (light text)`;
+
+    if (i + 1 < entries.length) {
+      const [name2, colors2] = entries[i + 1];
+      line += `    ${name2.padEnd(8)} ${colors2.fill} / ${colors2.stroke}`;
+      if (colors2.fontColor) line += ` (light text)`;
+    }
+
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function buildModelMap(): string {
+  return `DRAW.IO STUDIO — MODEL MAP
 
 DOCUMENT: mxfile > diagram[name] > mxGraphModel > root > mxCell[]
   Cells 0,1 always present. Tool manages all XML structure and IDs.
 
 NODE TYPES:
-  svc        rounded rectangle (services, components)
-  db         cylinder (databases, storage, caches)
-  api        hexagon (APIs, gateways, transforms)
-  decision   diamond (branches, conditions)
-  queue      parallelogram (queues, streams, buffers)
-  cloud      cloud (external services, internet)
-  actor      person (users, roles, personas)
-  doc        document (files, reports, logs)
-  box        plain rectangle (generic)
-  circle     ellipse (states, events)
-  process    double-bordered rect (predefined processes)
-  triangle   triangle (warnings, deltas)
+${generateNodeTypesSection()}
 
 THEMES (fill / stroke):
-  blue       #dae8fc / #6c8ebf    green    #d5e8d4 / #82b366
-  red        #f8cecc / #b85450    yellow   #fff2cc / #d6b656
-  orange     #ffe6cc / #d79b00    purple   #e1d5e7 / #9673a6
-  gray       #f5f5f5 / #666666    dark     #1a1a2e / #16213e (light text)
-  white      #ffffff / #000000
+${generateThemesSection()}
 
 EDGE STYLES: solid, dashed, dotted, animated, thick, curved, orthogonal
 ARROWS: -> (directed), <-> (bidirectional), -- (undirected)
 ARROW HEADS: arrow, open-arrow, diamond, circle, crow-foot, none
 
-OPERATIONS: add, connect, style, move, resize, swap, label, badge,
-            group, ungroup, remove, layout, orient, define, page, layer
+OPERATIONS: add, connect, disconnect, style, move, resize, swap, label, badge,
+            group, ungroup, remove, layout, orient, define,
+            page, layer, checkpoint, title
 
 LAYOUT: layout @all algo:layered|force|tree dir:TB|LR|BT|RL [spacing:N]
 ORIENT: orient TB|LR|BT|RL (sets page flow direction)
@@ -40,6 +66,11 @@ MOVE: move REF to:X,Y | to:REGION | near:REF dir:DIR [strict:true]
            middle-right, bottom-left, bottom-center, bottom-right
   move @group:NAME to:REGION|X,Y (moves entire group)
   Collision prevention ON by default, strict:true to disable
+DISCONNECT: disconnect REF -> REF (removes edge between two shapes)
+CHECKPOINT: checkpoint NAME (named snapshot for undo to:NAME)
+TITLE: title "Diagram Title" (sets diagram title)
+PAGE: page add|switch|remove|list "Name"
+LAYER: layer create|switch|show|hide|list "Name"
 
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
@@ -56,20 +87,32 @@ CONVENTIONS:
   - Themes and types are expanded by the tool into full draw.io styles
   - All XML structure, IDs, and geometry handled by the tool
   - Custom types (via define) are included in studio_help after creation`;
+}
 
-export function getModelMap(customTypes: Map<string, CustomType>): string {
-  if (customTypes.size === 0) {
-    return MODEL_MAP_BASE;
+const MODEL_MAP_BASE = buildModelMap();
+
+export function getModelMap(customTypes: Map<string, CustomType>, customThemes?: Map<string, CustomTheme>): string {
+  let result = MODEL_MAP_BASE;
+
+  if (customThemes && customThemes.size > 0) {
+    const lines: string[] = [];
+    for (const [name, ct] of customThemes) {
+      lines.push(`  ${name.padEnd(10)} ${ct.fill} / ${ct.stroke}${ct.fontColor ? `  font:${ct.fontColor}` : ""}`);
+    }
+    result += "\n\nCUSTOM THEMES:\n" + lines.join("\n");
   }
 
-  const lines: string[] = [];
-  for (const [name, ct] of customTypes) {
-    const parts = [`  ${name.padEnd(10)} based on ${ct.base}`];
-    if (ct.theme) parts.push(ct.theme);
-    if (ct.badge) parts.push(`badge:${ct.badge}`);
-    if (ct.defaultSize) parts.push(`${ct.defaultSize.width}x${ct.defaultSize.height}`);
-    lines.push(parts.join(", "));
+  if (customTypes.size > 0) {
+    const lines: string[] = [];
+    for (const [name, ct] of customTypes) {
+      const parts = [`  ${name.padEnd(10)} based on ${ct.base}`];
+      if (ct.theme) parts.push(ct.theme);
+      if (ct.badge) parts.push(`badge:${ct.badge}`);
+      if (ct.defaultSize) parts.push(`${ct.defaultSize.width}x${ct.defaultSize.height}`);
+      lines.push(parts.join(", "));
+    }
+    result += "\n\nCUSTOM TYPES:\n" + lines.join("\n");
   }
 
-  return MODEL_MAP_BASE + "\n\nCUSTOM TYPES:\n" + lines.join("\n");
+  return result;
 }

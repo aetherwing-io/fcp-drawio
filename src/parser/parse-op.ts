@@ -4,7 +4,7 @@ import { tokenize, isKeyValue, parseKeyValue, isArrow, isSelector } from "./toke
 const VERBS = new Set<string>([
   "add", "remove", "define", "connect", "disconnect",
   "style", "label", "badge", "move", "resize", "swap",
-  "layout", "orient", "align", "distribute", "group", "ungroup",
+  "layout", "orient", "group", "ungroup",
   "layer", "page", "checkpoint", "title",
 ]);
 
@@ -68,10 +68,6 @@ export function parseOp(input: string): ParsedOp | { error: string; raw: string 
       return parseTargetWithParams("layout", rest, raw);
     case "orient":
       return parseSimpleTarget("orient", rest, raw);
-    case "align":
-      return parseTargetWithParams("align", rest, raw);
-    case "distribute":
-      return parseTargetWithParams("distribute", rest, raw);
     default:
       return { error: `unhandled verb "${verb}"`, raw };
   }
@@ -127,6 +123,7 @@ function parseAdd(tokens: string[], raw: string): ParsedOp | { error: string; ra
 
 /**
  * define NAME base:TYPE [theme:THEME] [badge:TEXT] [size:WxH]
+ * define theme NAME fill:#HEX stroke:#HEX [font-color:#HEX]
  */
 function parseDefine(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
@@ -134,25 +131,26 @@ function parseDefine(tokens: string[], raw: string): ParsedOp | { error: string;
   }
 
   const params = new Map<string, string>();
-  let target: string | undefined;
+  const nonParams: string[] = [];
 
   for (const token of tokens) {
     if (isKeyValue(token)) {
       const { key, value } = parseKeyValue(token);
       params.set(key, value);
-    } else if (!target) {
-      target = token;
+    } else {
+      nonParams.push(token);
     }
   }
 
-  if (!target) {
+  if (nonParams.length === 0) {
     return { error: "define requires a name", raw };
   }
 
   return {
     verb: "define",
     raw,
-    target,
+    target: nonParams[0],
+    targets: nonParams,
     params,
   };
 }
@@ -341,7 +339,7 @@ function parseGroup(tokens: string[], raw: string): ParsedOp | { error: string; 
 
 /**
  * Generic: VERB TARGET [key:value]*
- * Used for style, move, resize, layout, align, distribute
+ * Used for style, move, resize, layout
  */
 function parseTargetWithParams(verb: Verb, tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {

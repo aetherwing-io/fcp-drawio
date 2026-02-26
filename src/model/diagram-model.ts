@@ -1,7 +1,7 @@
 import type {
   Diagram, Page, Shape, Edge, Group, Layer, Bounds, Point,
   StyleSet, EdgeStyleSet, ShapeType, ArrowType, ThemeName,
-  DiagramEvent, EventLog, CustomType, Badge,
+  DiagramEvent, EventLog, CustomType, CustomTheme, Badge, FlowDirection,
 } from "../types/index.js";
 import { createEventLog, appendEvent, createCheckpoint, getUndoEvents, undoToCheckpoint, getRedoEvents, getRecentEvents, canUndo, canRedo } from "./event-log.js";
 import { nextShapeId, nextEdgeId, nextGroupId, nextPageId, nextLayerId, nextSequence } from "./id.js";
@@ -52,6 +52,7 @@ export class DiagramModel {
       pages: [page],
       activePage: pageId,
       customTypes: new Map(),
+      customThemes: new Map(),
       metadata: {
         host: "drawio-mcp-studio",
         modified: new Date().toISOString(),
@@ -333,6 +334,59 @@ export class DiagramModel {
     return undefined;
   }
 
+  // ── Layer CRUD ─────────────────────────────────────────
+
+  addLayer(name: string): Layer {
+    const page = this.getActivePage();
+    const layer: Layer = {
+      id: nextLayerId(),
+      name,
+      visible: true,
+      locked: false,
+      order: page.layers.length,
+    };
+    page.layers.push(layer);
+    this.emit({ type: "layer_created", layer, pageId: page.id });
+    return layer;
+  }
+
+  modifyLayer(layerId: string, changes: Partial<Pick<Layer, "visible" | "locked" | "name">>): Layer | null {
+    const page = this.getActivePage();
+    const layer = page.layers.find((l) => l.id === layerId);
+    if (!layer) return null;
+
+    const before: Partial<Layer> = {};
+    const after: Partial<Layer> = {};
+
+    for (const [key, value] of Object.entries(changes)) {
+      if (value !== undefined) {
+        (before as any)[key] = (layer as any)[key];
+        (after as any)[key] = value;
+        (layer as any)[key] = value;
+      }
+    }
+
+    this.emit({ type: "layer_modified", pageId: page.id, layerId, before, after });
+    return layer;
+  }
+
+  // ── Flow direction ─────────────────────────────────────
+
+  setFlowDirection(dir: FlowDirection): void {
+    const page = this.getActivePage();
+    const before = page.flowDirection;
+    page.flowDirection = dir;
+    this.emit({ type: "flow_direction_changed", pageId: page.id, before, after: dir });
+  }
+
+  // ── Title ──────────────────────────────────────────────
+
+  setTitle(title: string): void {
+    const before = this.diagram.title;
+    this.diagram.title = title;
+    this.emit({ type: "title_changed", before, after: title });
+  }
+
   // ── Custom types ─────────────────────────────────────────
 
   defineCustomType(name: string, base: ShapeType, options: { theme?: ThemeName; badge?: string; size?: { width: number; height: number } } = {}): CustomType {
@@ -344,6 +398,12 @@ export class DiagramModel {
       defaultSize: options.size,
     };
     this.diagram.customTypes.set(name, ct);
+    return ct;
+  }
+
+  defineCustomTheme(name: string, fill: string, stroke: string, fontColor?: string): CustomTheme {
+    const ct: CustomTheme = { name, fill, stroke, fontColor };
+    this.diagram.customThemes.set(name, ct);
     return ct;
   }
 
@@ -707,7 +767,7 @@ export class DiagramModel {
     return FIRST_SHAPE_POS;
   }
 
-  private positionRelativeTo(
+  positionRelativeTo(
     ref: Bounds,
     size: { width: number; height: number },
     dir: string,
@@ -849,6 +909,30 @@ export class DiagramModel {
       case "page_removed":
         this.diagram.pages.push(event.page);
         break;
+      case "layer_created": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) {
+          const idx = p.layers.findIndex((l) => l.id === event.layer.id);
+          if (idx !== -1) p.layers.splice(idx, 1);
+        }
+        break;
+      }
+      case "layer_modified": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) {
+          const layer = p.layers.find((l) => l.id === event.layerId);
+          if (layer) Object.assign(layer, event.before);
+        }
+        break;
+      }
+      case "flow_direction_changed": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) p.flowDirection = event.before as import("../types/index.js").FlowDirection | undefined;
+        break;
+      }
+      case "title_changed":
+        this.diagram.title = event.before;
+        break;
       case "checkpoint":
         // No-op for undo
         break;
@@ -905,6 +989,27 @@ export class DiagramModel {
         if (idx !== -1) this.diagram.pages.splice(idx, 1);
         break;
       }
+      case "layer_created": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) p.layers.push({ ...event.layer });
+        break;
+      }
+      case "layer_modified": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) {
+          const layer = p.layers.find((l) => l.id === event.layerId);
+          if (layer) Object.assign(layer, event.after);
+        }
+        break;
+      }
+      case "flow_direction_changed": {
+        const p = this.diagram.pages.find((pg) => pg.id === event.pageId);
+        if (p) p.flowDirection = event.after as import("../types/index.js").FlowDirection;
+        break;
+      }
+      case "title_changed":
+        this.diagram.title = event.after;
+        break;
       case "checkpoint":
         break;
     }

@@ -348,8 +348,21 @@ export function serializeDiagram(diagram: Diagram): string {
 
   const pages = diagram.pages.map((page) => serializePage(page));
 
+  // Serialize custom types and themes as JSON in a studio-meta attribute
+  let studioMetaAttr = "";
+  const studioMeta: Record<string, unknown> = {};
+  if (diagram.customTypes.size > 0) {
+    studioMeta.customTypes = Object.fromEntries(diagram.customTypes);
+  }
+  if (diagram.customThemes.size > 0) {
+    studioMeta.customThemes = Object.fromEntries(diagram.customThemes);
+  }
+  if (Object.keys(studioMeta).length > 0) {
+    studioMetaAttr = ` studio-meta="${escapeXml(JSON.stringify(studioMeta))}"`;
+  }
+
   return (
-    `<mxfile host="${host}" modified="${modified}" version="${version}">\n` +
+    `<mxfile host="${host}" modified="${modified}" version="${version}"${studioMetaAttr}>\n` +
     pages.join("\n") + "\n" +
     `</mxfile>`
   );

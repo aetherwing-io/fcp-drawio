@@ -3,7 +3,7 @@ import { inflateSync } from "node:zlib";
 import type {
   Diagram, Page, Shape, Edge, Group, Layer, Bounds,
   StyleSet, EdgeStyleSet, ShapeType, ArrowType,
-  DiagramMetadata,
+  DiagramMetadata, CustomType, CustomTheme,
 } from "../types/index.js";
 import { NODE_TYPES } from "../lib/node-types.js";
 import { createDefaultStyle, createDefaultEdgeStyle } from "../model/defaults.js";
@@ -438,6 +438,24 @@ export function deserializeDiagram(xml: string): Diagram {
     version: mxfile["@_version"] || "0.2.0",
   };
 
+  // Extract studio-meta (custom types/themes)
+  let customTypes = new Map<string, CustomType>();
+  let customThemes = new Map<string, CustomTheme>();
+  const studioMetaRaw = mxfile["@_studio-meta"];
+  if (studioMetaRaw) {
+    try {
+      const studioMeta = JSON.parse(studioMetaRaw);
+      if (studioMeta.customTypes) {
+        customTypes = new Map(Object.entries(studioMeta.customTypes) as [string, CustomType][]);
+      }
+      if (studioMeta.customThemes) {
+        customThemes = new Map(Object.entries(studioMeta.customThemes) as [string, CustomTheme][]);
+      }
+    } catch {
+      // Silently ignore malformed studio-meta
+    }
+  }
+
   // Extract diagram elements (one per page)
   let diagramElements = mxfile.diagram;
   if (!diagramElements) {
@@ -544,7 +562,8 @@ export function deserializeDiagram(xml: string): Diagram {
     filePath: null,
     pages,
     activePage: pages[0]?.id || "",
-    customTypes: new Map(),
+    customTypes,
+    customThemes,
     metadata,
   };
 }

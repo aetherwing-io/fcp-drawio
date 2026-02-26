@@ -6,27 +6,26 @@ import { DiagramModel } from "../model/diagram-model.js";
 import { parseOp, isParseError } from "../parser/parse-op.js";
 import { resolveRef } from "../parser/resolve-ref.js";
 import { isShapeType, inferTypeFromLabel, computeDefaultSize } from "../lib/node-types.js";
-import { isThemeName, resolveColor } from "../lib/themes.js";
-import { nextLayerId } from "../model/id.js";
+import { isThemeName, resolveColor, THEMES } from "../lib/themes.js";
 import { getModelMap } from "./model-map.js";
 import {
   formatShapeCreated, formatEdgeCreated, formatShapeModified,
-  formatShapeDeleted, formatGroupCreated, formatStatus,
-  formatList, formatConnections, formatDescribe, formatStats,
-  formatHistory, formatMap,
+  formatShapeDeleted, formatGroupCreated,
 } from "./response-formatter.js";
-import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
-import { serializeDiagram } from "../serialization/serialize.js";
-import { deserializeDiagram } from "../serialization/deserialize.js";
-import { readFileSync, writeFileSync } from "node:fs";
 import { runElkLayout } from "../layout/elk-layout.js";
 import type { LayoutOptions } from "../layout/elk-layout.js";
+import { QueryHandler } from "./query-handler.js";
+import { SessionHandler } from "./session-handler.js";
 
 export class IntentLayer {
   model: DiagramModel;
+  private queryHandler: QueryHandler;
+  private sessionHandler: SessionHandler;
 
   constructor() {
     this.model = new DiagramModel();
+    this.queryHandler = new QueryHandler(this.model);
+    this.sessionHandler = new SessionHandler(this.model);
   }
 
   // ── Suggestion helpers ──────────────────────────────────
@@ -55,7 +54,7 @@ export class IntentLayer {
 
   executeQuery(query: string): string {
     try {
-      return this.dispatchQuery(query.trim());
+      return this.queryHandler.dispatch(query.trim());
     } catch (err: unknown) {
       return `Error: ${err instanceof Error ? err.message : String(err)}`;
     }
@@ -63,14 +62,14 @@ export class IntentLayer {
 
   executeSession(action: string): string {
     try {
-      return this.dispatchSession(action.trim());
+      return this.sessionHandler.dispatch(action.trim());
     } catch (err: unknown) {
       return `Error: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
   getHelp(): string {
-    return getModelMap(this.model.diagram.customTypes);
+    return getModelMap(this.model.diagram.customTypes, this.model.diagram.customThemes);
   }
 
   // ── Single op execution ────────────────────────────────
@@ -156,9 +155,15 @@ export class IntentLayer {
       resolvedType = inferred ?? "svc";
     }
 
-    // Validate theme
-    if (theme && !isThemeName(theme)) {
-      return { success: false, message: `Unknown theme "${theme}"` };
+    // Validate theme (check custom themes too)
+    let customThemeColors: { fill: string; stroke: string; fontColor?: string } | undefined;
+    if (theme) {
+      const ct = this.model.diagram.customThemes.get(theme);
+      if (ct) {
+        customThemeColors = ct;
+      } else if (!isThemeName(theme)) {
+        return { success: false, message: `Unknown theme "${theme}"` };
+      }
     }
 
     // Resolve near reference
@@ -227,13 +232,22 @@ export class IntentLayer {
         : (op.target ?? "Untitled");
 
       const shape = this.model.addShape(label, resolvedType, {
-        theme,
+        theme: customThemeColors ? undefined : theme,
         near: nearId,
         dir: dir ?? undefined,
         at,
         inGroup,
         size,
       });
+
+      // Apply custom theme colors if using a custom theme
+      if (customThemeColors) {
+        const style = { ...shape.style };
+        style.fillColor = customThemeColors.fill;
+        style.strokeColor = customThemeColors.stroke;
+        if (customThemeColors.fontColor) style.fontColor = customThemeColors.fontColor;
+        this.model.modifyShape(shape.id, { style });
+      }
 
       // Apply badge from custom type
       if (badgeText) {
@@ -425,6 +439,27 @@ export class IntentLayer {
 
     // Map style params
     const styleChanges: Partial<import("../types/index.js").StyleSet> = {};
+
+    // Handle theme param (built-in and custom)
+    const themeParam = op.params.get("theme");
+    if (themeParam) {
+      const customTheme = this.model.diagram.customThemes.get(themeParam);
+      if (customTheme) {
+        styleChanges.fillColor = customTheme.fill;
+        styleChanges.strokeColor = customTheme.stroke;
+        if (customTheme.fontColor) styleChanges.fontColor = customTheme.fontColor;
+      } else if (isThemeName(themeParam)) {
+        const colors = resolveColor(themeParam);
+        // resolveColor returns fill for theme name — use resolveTheme for full colors
+        const themeColors = THEMES[themeParam as ThemeName];
+        if (themeColors) {
+          styleChanges.fillColor = themeColors.fill;
+          styleChanges.strokeColor = themeColors.stroke;
+          if (themeColors.fontColor) styleChanges.fontColor = themeColors.fontColor;
+        }
+      }
+    }
+
     for (const [key, value] of op.params) {
       switch (key) {
         case "fill": {
@@ -627,35 +662,19 @@ export class IntentLayer {
       }
     }
 
-    // near:REF dir:DIR
+    // near:REF dir:DIR — delegate to model's positioning logic
     const nearRef = op.params.get("near");
     if (nearRef) {
       const nearResolved = resolveRef(nearRef, this.model.registry, this.model);
       if (nearResolved.kind === "single") {
-        const refBounds = nearResolved.shape.bounds;
         const dir = op.params.get("dir") ?? "below";
-        const gap = 60;
-        const refCx = refBounds.x + refBounds.width / 2;
-        const refCy = refBounds.y + refBounds.height / 2;
-
-        switch (dir) {
-          case "below":
-            newX = refCx - shape.bounds.width / 2;
-            newY = refBounds.y + refBounds.height + gap;
-            break;
-          case "above":
-            newX = refCx - shape.bounds.width / 2;
-            newY = refBounds.y - gap - shape.bounds.height;
-            break;
-          case "right":
-            newX = refBounds.x + refBounds.width + gap;
-            newY = refCy - shape.bounds.height / 2;
-            break;
-          case "left":
-            newX = refBounds.x - gap - shape.bounds.width;
-            newY = refCy - shape.bounds.height / 2;
-            break;
-        }
+        const pos = this.model.positionRelativeTo(
+          nearResolved.shape.bounds,
+          { width: shape.bounds.width, height: shape.bounds.height },
+          dir,
+        );
+        newX = pos.x;
+        newY = pos.y;
       }
     }
 
@@ -896,6 +915,25 @@ export class IntentLayer {
       return { success: false, message: "define requires a name" };
     }
 
+    // Handle "define theme NAME fill:# stroke:#"
+    if (op.target === "theme") {
+      const themeName = op.targets && op.targets.length > 1 ? op.targets[1] : op.params.get("name");
+      if (!themeName) {
+        return { success: false, message: "define theme requires a name" };
+      }
+      const fill = op.params.get("fill");
+      const stroke = op.params.get("stroke");
+      if (!fill || !stroke) {
+        return { success: false, message: "define theme requires fill:# and stroke:#" };
+      }
+      const fontColor = op.params.get("font-color");
+      this.model.defineCustomTheme(themeName, fill, stroke, fontColor);
+      return {
+        success: true,
+        message: `defined theme ${themeName} (${fill} / ${stroke}${fontColor ? ` font:${fontColor}` : ""})`,
+      };
+    }
+
     const baseName = op.params.get("base");
     if (!baseName || !isShapeType(baseName)) {
       return { success: false, message: `define requires base:TYPE (got "${baseName ?? "none"}")` };
@@ -935,7 +973,7 @@ export class IntentLayer {
     if (!op.target) {
       return { success: false, message: "title requires a name" };
     }
-    this.model.diagram.title = op.target;
+    this.model.setTitle(op.target);
     return { success: true, message: `title set to "${op.target}"` };
   }
 
@@ -968,6 +1006,18 @@ export class IntentLayer {
         if (!ok) return { success: false, message: `Cannot remove page "${name}"` };
         return { success: true, message: `-page ${name}` };
       }
+      case "list": {
+        const activePage = this.model.getActivePage();
+        const lines = this.model.diagram.pages.map((p) => {
+          const markers: string[] = [];
+          if (p.id === activePage.id) markers.push("active");
+          markers.push(`${p.shapes.size} shapes`);
+          markers.push(`${p.edges.size} edges`);
+          const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
+          return `  ${p.name}${suffix}`;
+        });
+        return { success: true, message: `pages:\n${lines.join("\n")}` };
+      }
       case "duplicate": {
         // Stub — not implemented in model yet
         return { success: false, message: "page duplicate not yet implemented" };
@@ -991,9 +1041,7 @@ export class IntentLayer {
       case "create": {
         const name = op.target;
         if (!name) return { success: false, message: "layer create requires a name" };
-        const layerId = nextLayerId();
-        const order = page.layers.length;
-        page.layers.push({ id: layerId, name, visible: true, locked: false, order });
+        this.model.addLayer(name);
         return { success: true, message: `+layer ${name}` };
       }
       case "show": {
@@ -1001,7 +1049,7 @@ export class IntentLayer {
         if (!name) return { success: false, message: "layer show requires a name" };
         const layer = page.layers.find((l) => l.name === name);
         if (!layer) return { success: false, message: `Unknown layer "${name}"` };
-        layer.visible = true;
+        this.model.modifyLayer(layer.id, { visible: true });
         return { success: true, message: `layer ${name} visible` };
       }
       case "hide": {
@@ -1009,8 +1057,27 @@ export class IntentLayer {
         if (!name) return { success: false, message: "layer hide requires a name" };
         const layer = page.layers.find((l) => l.name === name);
         if (!layer) return { success: false, message: `Unknown layer "${name}"` };
-        layer.visible = false;
+        this.model.modifyLayer(layer.id, { visible: false });
         return { success: true, message: `layer ${name} hidden` };
+      }
+      case "switch": {
+        const name = op.target;
+        if (!name) return { success: false, message: "layer switch requires a name" };
+        const layer = page.layers.find((l) => l.name === name);
+        if (!layer) return { success: false, message: `Unknown layer "${name}"` };
+        page.defaultLayer = layer.id;
+        return { success: true, message: `switched to layer ${name}` };
+      }
+      case "list": {
+        const lines = page.layers.map((l) => {
+          const markers: string[] = [];
+          if (l.id === page.defaultLayer) markers.push("active");
+          if (!l.visible) markers.push("hidden");
+          if (l.locked) markers.push("locked");
+          const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
+          return `  ${l.name}${suffix}`;
+        });
+        return { success: true, message: `layers:\n${lines.join("\n")}` };
       }
       case "move": {
         // Stub for moving shapes between layers
@@ -1053,7 +1120,7 @@ export class IntentLayer {
       const count = this.model.applyLayout(result);
 
       // Auto-set flow direction to match layout
-      page.flowDirection = dirParam as import("../types/index.js").FlowDirection;
+      this.model.setFlowDirection(dirParam as import("../types/index.js").FlowDirection);
 
       return {
         success: true,
@@ -1080,223 +1147,9 @@ export class IntentLayer {
       return { success: false, message: `Unknown direction "${op.target}". Use: TB, LR, BT, RL` };
     }
 
-    const page = this.model.getActivePage();
-    page.flowDirection = dir as import("../types/index.js").FlowDirection;
+    this.model.setFlowDirection(dir as import("../types/index.js").FlowDirection);
     return { success: true, message: `@orient ${dir}` };
   }
 
-  // ── Query dispatch ─────────────────────────────────────
-
-  private dispatchQuery(query: string): string {
-    const tokens = tokenize(query);
-    if (tokens.length === 0) return "Empty query";
-
-    const cmd = tokens[0].toLowerCase();
-
-    switch (cmd) {
-      case "list": return this.queryList(tokens.slice(1));
-      case "describe": return this.queryDescribe(tokens.slice(1));
-      case "connections": return this.queryConnections(tokens.slice(1));
-      case "stats": return formatStats(this.model);
-      case "status": return formatStatus(this.model);
-      case "map": return formatMap(this.model);
-      case "find": return this.queryFind(tokens.slice(1));
-      case "diff": return this.queryDiff(tokens.slice(1));
-      case "history": return this.queryHistory(tokens.slice(1));
-      default: return `Unknown query command "${cmd}"`;
-    }
-  }
-
-  private queryList(args: string[]): string {
-    const page = this.model.getActivePage();
-
-    if (args.length > 0 && args[0].startsWith("@")) {
-      // Selector-based filter
-      const resolved = resolveRef(args[0], this.model.registry, this.model);
-      if (resolved.kind === "none") return resolved.message;
-      const shapes = resolved.kind === "single" ? [resolved.shape] : resolved.shapes;
-      return formatList(shapes);
-    }
-
-    return formatList([...page.shapes.values()]);
-  }
-
-  private queryDescribe(args: string[]): string {
-    if (args.length === 0) return "describe requires a reference";
-    const resolved = resolveRef(args[0], this.model.registry, this.model);
-    if (resolved.kind !== "single") {
-      return resolved.kind === "none" ? resolved.message : resolved.message;
-    }
-    return formatDescribe(resolved.shape, this.model);
-  }
-
-  private queryConnections(args: string[]): string {
-    if (args.length === 0) return "connections requires a reference";
-    const resolved = resolveRef(args[0], this.model.registry, this.model);
-    if (resolved.kind !== "single") {
-      return resolved.kind === "none" ? resolved.message : resolved.message;
-    }
-
-    const page = this.model.getActivePage();
-    const { incoming, outgoing } = this.model.registry.getEdgesForShape(resolved.shape.id, page);
-    return formatConnections(resolved.shape, incoming, outgoing, this.model);
-  }
-
-  private queryFind(args: string[]): string {
-    if (args.length === 0) return "find requires a search term";
-    const term = args.join(" ").toLowerCase();
-    const page = this.model.getActivePage();
-    const matches: Shape[] = [];
-
-    for (const shape of page.shapes.values()) {
-      if (shape.label.toLowerCase().includes(term)) {
-        matches.push(shape);
-      }
-    }
-
-    if (matches.length === 0) return `No shapes matching "${args.join(" ")}"`;
-    return formatList(matches);
-  }
-
-  private queryDiff(args: string[]): string {
-    if (args.length === 0) return "diff requires checkpoint:NAME";
-    const param = args[0];
-    let cpName: string;
-    if (param.startsWith("checkpoint:")) {
-      cpName = param.slice(11);
-    } else {
-      cpName = param;
-    }
-
-    const cpIndex = this.model.eventLog.checkpoints.get(cpName);
-    if (cpIndex === undefined) {
-      return `Unknown checkpoint "${cpName}"`;
-    }
-
-    const events = this.model.eventLog.events.slice(cpIndex);
-    const nonCheckpoint = events.filter((e) => e.type !== "checkpoint");
-    if (nonCheckpoint.length === 0) return `No changes since checkpoint "${cpName}"`;
-
-    return `${nonCheckpoint.length} changes since "${cpName}":\n` + formatHistory(nonCheckpoint);
-  }
-
-  private queryHistory(args: string[]): string {
-    const count = args.length > 0 ? parseInt(args[0], 10) : 10;
-    const events = this.model.getHistory(isNaN(count) ? 10 : count);
-    return formatHistory(events);
-  }
-
-  // ── Session dispatch ───────────────────────────────────
-
-  private dispatchSession(action: string): string {
-    const tokens = tokenize(action);
-    if (tokens.length === 0) return "Empty action";
-
-    const cmd = tokens[0].toLowerCase();
-
-    switch (cmd) {
-      case "new": {
-        const title = tokens[1] ?? "Untitled";
-        this.model.createNew(title);
-        return `new diagram "${title}" created`;
-      }
-      case "open": {
-        const filePath = tokens[1];
-        if (!filePath) return "open requires a file path";
-        try {
-          const xml = readFileSync(filePath, "utf-8");
-          this.model.diagram = deserializeDiagram(xml);
-          this.model.diagram.filePath = filePath;
-          if (this.model.diagram.pages.length > 0) {
-            this.model.diagram.activePage = this.model.diagram.pages[0].id;
-          }
-          this.model.rebuildRegistry();
-          const page = this.model.getActivePage();
-          const parts: string[] = [];
-          parts.push(`ok: opened "${filePath}" (${this.model.diagram.pages.length} pages, ${page.shapes.size} shapes, ${page.edges.size} edges, ${page.groups.size} groups)`);
-
-          // Canvas and flow info
-          const canvasBounds = this.model.computeCanvasBounds();
-          if (canvasBounds) {
-            const flowDir = page.flowDirection ?? "TB";
-            parts.push(`flow:${flowDir} canvas:${Math.round(canvasBounds.width)}x${Math.round(canvasBounds.height)}`);
-          }
-
-          // Group summary
-          if (page.groups.size > 0) {
-            const groupSummary = [...page.groups.values()]
-              .map((g) => `${g.name}(${g.memberIds.size})`)
-              .join(", ");
-            parts.push(`groups: ${groupSummary}`);
-          }
-
-          // Ungrouped shapes
-          const groupedIds = new Set<string>();
-          for (const g of page.groups.values()) {
-            for (const id of g.memberIds) groupedIds.add(id);
-          }
-          const ungroupedShapes = [...page.shapes.values()].filter((s) => !groupedIds.has(s.id));
-          if (ungroupedShapes.length > 0 && page.groups.size > 0) {
-            const ungroupedSummary = ungroupedShapes
-              .map((s) => `${s.label}(${s.type})`)
-              .join(", ");
-            parts.push(`ungrouped: ${ungroupedSummary}`);
-          }
-
-          return parts.join("\n");
-        } catch (e: any) {
-          return `error: ${e.message}`;
-        }
-      }
-      case "save": {
-        // Parse "as:PATH" param
-        let savePath = this.model.diagram.filePath;
-        for (const token of tokens.slice(1)) {
-          if (isKeyValue(token)) {
-            const { key, value } = parseKeyValue(token);
-            if (key === "as") savePath = value;
-          }
-        }
-        if (!savePath) return "error: no file path. Use save as:./file.drawio";
-        try {
-          const xml = serializeDiagram(this.model.diagram);
-          writeFileSync(savePath, xml, "utf-8");
-          this.model.diagram.filePath = savePath;
-          const page = this.model.getActivePage();
-          return `ok: saved ${savePath} (${page.shapes.size} shapes, ${page.edges.size} edges, ${page.groups.size} groups)`;
-        } catch (e: any) {
-          return `error: ${e.message}`;
-        }
-      }
-      case "export":
-        return "export not yet implemented (requires draw.io Desktop)";
-      case "checkpoint": {
-        const name = tokens[1];
-        if (!name) return "checkpoint requires a name";
-        this.model.checkpoint(name);
-        return `checkpoint "${name}" created`;
-      }
-      case "undo": {
-        if (tokens[1] === "to:" || (tokens.length >= 2 && tokens[1].startsWith("to:"))) {
-          // undo to:NAME
-          const name = tokens[1].startsWith("to:") ? tokens[1].slice(3) : tokens[2];
-          if (!name) return "undo to: requires a checkpoint name";
-          const events = this.model.undoTo(name);
-          if (!events) return `Cannot undo to "${name}"`;
-          return `undone ${events.length} events to checkpoint "${name}"`;
-        }
-        if (!this.model.canUndo()) return "nothing to undo";
-        const events = this.model.undo();
-        return `undone ${events.length} event${events.length !== 1 ? "s" : ""}`;
-      }
-      case "redo": {
-        if (!this.model.canRedo()) return "nothing to redo";
-        const events = this.model.redo();
-        return `redone ${events.length} event${events.length !== 1 ? "s" : ""}`;
-      }
-      default:
-        return `Unknown session action "${cmd}"`;
-    }
-  }
 }
 

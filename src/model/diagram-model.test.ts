@@ -348,3 +348,90 @@ describe("DiagramModel — event history", () => {
     expect(history[1].type).toBe("shape_created");
   });
 });
+
+describe("DiagramModel — layer event sourcing", () => {
+  it("addLayer emits layer_created event", () => {
+    const layer = model.addLayer("Background");
+    expect(layer.name).toBe("Background");
+    const page = model.getActivePage();
+    expect(page.layers).toHaveLength(2);
+    const history = model.getHistory(1);
+    expect(history[0].type).toBe("layer_created");
+  });
+
+  it("undo reverses addLayer", () => {
+    model.addLayer("Background");
+    expect(model.getActivePage().layers).toHaveLength(2);
+    model.undo();
+    expect(model.getActivePage().layers).toHaveLength(1);
+  });
+
+  it("redo restores addLayer", () => {
+    model.addLayer("Background");
+    model.undo();
+    model.redo();
+    expect(model.getActivePage().layers).toHaveLength(2);
+    expect(model.getActivePage().layers[1].name).toBe("Background");
+  });
+
+  it("modifyLayer emits layer_modified event", () => {
+    const layer = model.addLayer("Background");
+    model.modifyLayer(layer.id, { visible: false });
+    const page = model.getActivePage();
+    const bg = page.layers.find(l => l.name === "Background")!;
+    expect(bg.visible).toBe(false);
+  });
+
+  it("undo reverses modifyLayer", () => {
+    const layer = model.addLayer("Background");
+    model.modifyLayer(layer.id, { visible: false });
+    model.undo();
+    const page = model.getActivePage();
+    const bg = page.layers.find(l => l.name === "Background")!;
+    expect(bg.visible).toBe(true);
+  });
+});
+
+describe("DiagramModel — flow direction event sourcing", () => {
+  it("setFlowDirection emits event", () => {
+    model.setFlowDirection("LR");
+    expect(model.getActivePage().flowDirection).toBe("LR");
+    const history = model.getHistory(1);
+    expect(history[0].type).toBe("flow_direction_changed");
+  });
+
+  it("undo reverses setFlowDirection", () => {
+    model.setFlowDirection("LR");
+    model.undo();
+    expect(model.getActivePage().flowDirection).toBeUndefined();
+  });
+
+  it("redo restores setFlowDirection", () => {
+    model.setFlowDirection("LR");
+    model.undo();
+    model.redo();
+    expect(model.getActivePage().flowDirection).toBe("LR");
+  });
+});
+
+describe("DiagramModel — title event sourcing", () => {
+  it("setTitle emits event", () => {
+    model.setTitle("New Title");
+    expect(model.diagram.title).toBe("New Title");
+    const history = model.getHistory(1);
+    expect(history[0].type).toBe("title_changed");
+  });
+
+  it("undo reverses setTitle", () => {
+    model.setTitle("New Title");
+    model.undo();
+    expect(model.diagram.title).toBe("Test Diagram");
+  });
+
+  it("redo restores setTitle", () => {
+    model.setTitle("New Title");
+    model.undo();
+    model.redo();
+    expect(model.diagram.title).toBe("New Title");
+  });
+});

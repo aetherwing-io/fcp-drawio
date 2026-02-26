@@ -202,8 +202,8 @@ function resolveSelector(selector: string, registry: ReferenceRegistry, model: D
     if (innerResult.kind === "multiple") {
       return { kind: "none", message: `@connected:${innerRef} — ambiguous: ${innerResult.message}` };
     }
-    // innerResult.kind === "single" or "group"
-    if (innerResult.kind === "group") {
+    // innerResult.kind === "single" at this point
+    if (innerResult.kind !== "single") {
       return { kind: "none", message: `@connected:${innerRef} — cannot use group as anchor` };
     }
     const connected = registry.getConnectedShapes(innerResult.shape.id, page);

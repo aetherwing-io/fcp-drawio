@@ -182,6 +182,13 @@ export interface CustomType {
   defaultSize?: { width: number; height: number };
 }
 
+export interface CustomTheme {
+  name: string;
+  fill: string;
+  stroke: string;
+  fontColor?: string;
+}
+
 export interface Diagram {
   id: string;
   title: string;

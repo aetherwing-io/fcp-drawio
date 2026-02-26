@@ -33,6 +33,8 @@ ARROW HEADS: arrow, open-arrow, diamond, circle, crow-foot, none
 OPERATIONS: add, connect, style, move, resize, swap, label, badge,
             group, ungroup, remove, layout, define, page, layer
 
+LAYOUT: layout @all algo:layered|force|tree dir:TB|LR|BT|RL [spacing:N]
+
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
 

@@ -19,6 +19,8 @@ import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
 import { serializeDiagram } from "../serialization/serialize.js";
 import { deserializeDiagram } from "../serialization/deserialize.js";
 import { readFileSync, writeFileSync } from "node:fs";
+import { runElkLayout } from "../layout/elk-layout.js";
+import type { LayoutOptions } from "../layout/elk-layout.js";
 
 export class IntentLayer {
   model: DiagramModel;
@@ -43,8 +45,12 @@ export class IntentLayer {
 
   // ── Main entry points ──────────────────────────────────
 
-  executeOps(ops: string[]): OpResult[] {
-    return ops.map((op) => this.executeSingleOp(op));
+  async executeOps(ops: string[]): Promise<OpResult[]> {
+    const results: OpResult[] = [];
+    for (const op of ops) {
+      results.push(await this.executeSingleOp(op));
+    }
+    return results;
   }
 
   executeQuery(query: string): string {
@@ -69,14 +75,14 @@ export class IntentLayer {
 
   // ── Single op execution ────────────────────────────────
 
-  private executeSingleOp(opStr: string): OpResult {
+  private async executeSingleOp(opStr: string): Promise<OpResult> {
     const parsed = parseOp(opStr);
     if (isParseError(parsed)) {
       return { success: false, message: parsed.error };
     }
 
     try {
-      return this.dispatchOp(parsed);
+      return await this.dispatchOp(parsed);
     } catch (err: unknown) {
       return {
         success: false,
@@ -85,7 +91,7 @@ export class IntentLayer {
     }
   }
 
-  private dispatchOp(op: ParsedOp): OpResult {
+  private async dispatchOp(op: ParsedOp): Promise<OpResult> {
     switch (op.verb) {
       case "add": return this.handleAdd(op);
       case "connect": return this.handleConnect(op);
@@ -104,6 +110,7 @@ export class IntentLayer {
       case "title": return this.handleTitle(op);
       case "page": return this.handlePage(op);
       case "layer": return this.handleLayer(op);
+      case "layout": return this.handleLayout(op);
       default:
         return { success: false, message: `Unhandled verb: ${op.verb}` };
     }
@@ -915,6 +922,49 @@ export class IntentLayer {
       }
       default:
         return { success: false, message: `Unknown layer subcommand "${sub}"` };
+    }
+  }
+
+  // ── Layout ─────────────────────────────────────────────
+
+  private async handleLayout(op: ParsedOp): Promise<OpResult> {
+    // Parse algorithm (default: layered)
+    const algoParam = op.params.get("algo") ?? "layered";
+    const validAlgos = new Set(["layered", "force", "tree"]);
+    if (!validAlgos.has(algoParam)) {
+      return { success: false, message: `Unknown algorithm "${algoParam}". Use: layered, force, tree` };
+    }
+
+    // Parse direction (default: TB)
+    const dirParam = (op.params.get("dir") ?? "TB").toUpperCase();
+    const validDirs = new Set(["TB", "LR", "BT", "RL"]);
+    if (!validDirs.has(dirParam)) {
+      return { success: false, message: `Unknown direction "${dirParam}". Use: TB, LR, BT, RL` };
+    }
+
+    // Parse spacing
+    const spacing = op.params.has("spacing") ? parseInt(op.params.get("spacing")!, 10) : undefined;
+
+    const options: LayoutOptions = {
+      algorithm: algoParam as LayoutOptions["algorithm"],
+      direction: dirParam as LayoutOptions["direction"],
+      spacing,
+    };
+
+    try {
+      const page = this.model.getActivePage();
+      const result = await runElkLayout(page, options);
+      const count = this.model.applyLayout(result);
+
+      return {
+        success: true,
+        message: `@layout ${algoParam} ${dirParam} — repositioned ${count} shapes`,
+      };
+    } catch (err: unknown) {
+      return {
+        success: false,
+        message: `Layout failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 

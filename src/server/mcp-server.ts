@@ -73,7 +73,7 @@ Examples: 'add svc AuthService theme:blue', 'connect A -> B label:queries'`,
       ),
     },
     async ({ ops }) => {
-      const results = intent.executeOps(ops);
+      const results = await intent.executeOps(ops);
       const lines = results
         .map((r) => {
           if (r.success) return r.message;

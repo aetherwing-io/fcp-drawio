@@ -21,7 +21,7 @@ function tmpFile(name: string): string {
   return p;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   resetIdCounters();
   for (const f of tmpFiles) {
     if (existsSync(f)) unlinkSync(f);
@@ -31,8 +31,8 @@ beforeEach(() => {
 
 // ── Scenario 1: Complete architecture diagram session ─────────
 
-describe("E2E Smoke — full architecture diagram", () => {
-  it("creates, populates, queries, saves, and reopens a diagram", () => {
+describe("E2E Smoke — full architecture diagram", async () => {
+  it("creates, populates, queries, saves, and reopens a diagram", async () => {
     const { intent } = makeServer();
 
     // studio_session: new
@@ -40,7 +40,7 @@ describe("E2E Smoke — full architecture diagram", () => {
     expect(newResult).toContain("Payment System");
 
     // studio: add shapes
-    const addOps = intent.executeOps([
+    const addOps = await intent.executeOps([
       "add api Gateway theme:orange",
       "add svc PaymentService theme:blue near:Gateway dir:below",
       "add svc FraudDetection theme:red near:PaymentService dir:right",
@@ -57,7 +57,7 @@ describe("E2E Smoke — full architecture diagram", () => {
     expect(addOps[1].message).toContain("+svc");
 
     // studio: connect
-    const connectOps = intent.executeOps([
+    const connectOps = await intent.executeOps([
       'connect Gateway -> PaymentService label:"POST /pay"',
       "connect PaymentService -> FraudDetection label:validate",
       "connect PaymentService -> TransactionDB label:INSERT",
@@ -68,7 +68,7 @@ describe("E2E Smoke — full architecture diagram", () => {
     expect(connectOps[0].message).toContain("~");
 
     // studio: group + style
-    const orgOps = intent.executeOps([
+    const orgOps = await intent.executeOps([
       "group PaymentService FraudDetection as:CoreServices",
       "style @type:db fill:#e8f5e9",
     ]);
@@ -141,14 +141,14 @@ describe("E2E Smoke — full architecture diagram", () => {
 
 // ── Scenario 2: Error recovery and suggestions ────────────────
 
-describe("E2E Smoke — error recovery", () => {
-  it("provides repair suggestions for typos", () => {
+describe("E2E Smoke — error recovery", async () => {
+  it("provides repair suggestions for typos", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Error Test"');
-    intent.executeOps(["add svc AuthenticationService theme:blue"]);
+    await intent.executeOps(["add svc AuthenticationService theme:blue"]);
 
     // Typo in reference
-    const ops = intent.executeOps(["connect AuthenticatonService -> Nowhere label:fail"]);
+    const ops = await intent.executeOps(["connect AuthenticatonService -> Nowhere label:fail"]);
     expect(ops[0].success).toBe(false);
     expect(ops[0].message).toContain("AuthenticationService"); // suggests correct name
     // Should have a suggestion field
@@ -157,11 +157,11 @@ describe("E2E Smoke — error recovery", () => {
     }
   });
 
-  it("handles partial batch failures without losing successes", () => {
+  it("handles partial batch failures without losing successes", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Batch Test"');
 
-    const ops = intent.executeOps([
+    const ops = await intent.executeOps([
       "add svc ServiceA theme:blue",
       "connect ServiceA -> NonExistent label:broken",
       "add db DatabaseB theme:green",
@@ -178,15 +178,15 @@ describe("E2E Smoke — error recovery", () => {
     expect(stats).toContain("edges: 1");
   });
 
-  it("rejects ambiguous references with disambiguation hint", () => {
+  it("rejects ambiguous references with disambiguation hint", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Ambiguity Test"');
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Cache theme:blue",
       "add db Cache theme:green",
     ]);
 
-    const ops = intent.executeOps(["style Cache fill:red"]);
+    const ops = await intent.executeOps(["style Cache fill:red"]);
     expect(ops[0].success).toBe(false);
     expect(ops[0].message).toContain("matches");
   });
@@ -194,18 +194,18 @@ describe("E2E Smoke — error recovery", () => {
 
 // ── Scenario 3: Undo/redo workflow ────────────────────────────
 
-describe("E2E Smoke — undo/redo", () => {
-  it("checkpoints and restores state", () => {
+describe("E2E Smoke — undo/redo", async () => {
+  it("checkpoints and restores state", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Undo Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Alpha theme:blue",
       "add svc Beta theme:blue",
     ]);
     intent.executeSession("checkpoint v1");
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Gamma theme:red",
       "add svc Delta theme:red",
     ]);
@@ -226,21 +226,21 @@ describe("E2E Smoke — undo/redo", () => {
 
 // ── Scenario 4: Multi-page diagrams ──────────────────────────
 
-describe("E2E Smoke — multi-page", () => {
-  it("creates shapes across pages and round-trips", () => {
+describe("E2E Smoke — multi-page", async () => {
+  it("creates shapes across pages and round-trips", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Multi-Page App"');
 
     // Page 1: Architecture
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Frontend theme:blue",
       "add svc Backend theme:green near:Frontend dir:below",
       "connect Frontend -> Backend label:REST",
     ]);
 
     // Add page 2
-    intent.executeOps(["page add Infrastructure"]);
-    intent.executeOps([
+    await intent.executeOps(["page add Infrastructure"]);
+    await intent.executeOps([
       "add cloud AWS theme:orange",
       "add db RDS theme:green near:AWS dir:below",
       "connect AWS -> RDS label:hosts",
@@ -260,16 +260,16 @@ describe("E2E Smoke — multi-page", () => {
 
 // ── Scenario 5: Custom types ─────────────────────────────────
 
-describe("E2E Smoke — custom types", () => {
-  it("defines and uses custom type, visible in help", () => {
+describe("E2E Smoke — custom types", async () => {
+  it("defines and uses custom type, visible in help", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Custom Type Test"');
 
     // Define custom type
-    intent.executeOps(["define kafka-stream base:queue theme:orange badge:Kafka"]);
+    await intent.executeOps(["define kafka-stream base:queue theme:orange badge:Kafka"]);
 
     // Use it
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Producer theme:blue",
       "add kafka-stream OrderEvents near:Producer dir:right",
     ]);
@@ -286,12 +286,12 @@ describe("E2E Smoke — custom types", () => {
 
 // ── Scenario 6: Selectors ────────────────────────────────────
 
-describe("E2E Smoke — selectors", () => {
-  it("bulk styles by type selector", () => {
+describe("E2E Smoke — selectors", async () => {
+  it("bulk styles by type selector", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Selector Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add db UserDB theme:green",
       "add db OrderDB theme:green",
       "add db CacheDB theme:green",
@@ -299,38 +299,38 @@ describe("E2E Smoke — selectors", () => {
     ]);
 
     // Style all databases
-    const ops = intent.executeOps(["style @type:db fill:#e0f2f1"]);
+    const ops = await intent.executeOps(["style @type:db fill:#e0f2f1"]);
     expect(ops[0].success).toBe(true);
     expect(ops[0].message).toContain("3"); // 3 shapes styled
   });
 
-  it("selects by group", () => {
+  it("selects by group", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Group Select Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Auth theme:blue",
       "add svc Users theme:blue",
       "add svc Billing theme:green",
       "group Auth Users as:CoreAPI",
     ]);
 
-    const ops = intent.executeOps(["style @group:CoreAPI fill:#bbdefb"]);
+    const ops = await intent.executeOps(["style @group:CoreAPI fill:#bbdefb"]);
     expect(ops[0].success).toBe(true);
     expect(ops[0].message).toContain("2");
   });
 
-  it("@recent selects last created shape", () => {
+  it("@recent selects last created shape", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Recent Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc First theme:blue",
       "add svc Second theme:green",
       "add svc Third theme:red",
     ]);
 
-    const ops = intent.executeOps(["label @recent NewThirdName"]);
+    const ops = await intent.executeOps(["label @recent NewThirdName"]);
     expect(ops[0].success).toBe(true);
 
     const list = intent.executeQuery("list");
@@ -342,18 +342,18 @@ describe("E2E Smoke — selectors", () => {
 
 // ── Scenario 7: Edge styles and arrows ───────────────────────
 
-describe("E2E Smoke — edge variations", () => {
-  it("creates edges with different styles and arrows", () => {
+describe("E2E Smoke — edge variations", async () => {
+  it("creates edges with different styles and arrows", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Edge Styles"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc A theme:blue",
       "add svc B theme:blue near:A dir:right",
       "add svc C theme:blue near:A dir:below",
     ]);
 
-    const ops = intent.executeOps([
+    const ops = await intent.executeOps([
       "connect A -> B label:directed style:dashed",
       "connect A <-> C label:bidirectional style:thick",
       "connect B -- C label:undirected",
@@ -366,19 +366,19 @@ describe("E2E Smoke — edge variations", () => {
 
 // ── Scenario 8: Label and relabel ────────────────────────────
 
-describe("E2E Smoke — label operations", () => {
-  it("renames shapes and edges", () => {
+describe("E2E Smoke — label operations", async () => {
+  it("renames shapes and edges", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Relabel Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc OldName theme:blue",
       "add svc Target theme:green near:OldName dir:right",
       "connect OldName -> Target label:old-connection",
     ]);
 
     // Relabel shape
-    const ops = intent.executeOps(['label OldName "NewName"']);
+    const ops = await intent.executeOps(['label OldName "NewName"']);
     expect(ops[0].success).toBe(true);
 
     // Can now reference by new name
@@ -386,21 +386,21 @@ describe("E2E Smoke — label operations", () => {
     expect(desc).toContain("NewName");
 
     // Old name no longer resolves
-    const failOps = intent.executeOps(["style OldName fill:red"]);
+    const failOps = await intent.executeOps(["style OldName fill:red"]);
     expect(failOps[0].success).toBe(false);
   });
 });
 
 // ── Scenario 9: Move and resize ──────────────────────────────
 
-describe("E2E Smoke — move and resize", () => {
-  it("moves and resizes shapes", () => {
+describe("E2E Smoke — move and resize", async () => {
+  it("moves and resizes shapes", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Move Test"');
 
-    intent.executeOps(["add svc Widget theme:blue"]);
+    await intent.executeOps(["add svc Widget theme:blue"]);
 
-    const moveOps = intent.executeOps([
+    const moveOps = await intent.executeOps([
       "move Widget at:500,300",
       "resize Widget to:200x100",
     ]);
@@ -410,8 +410,8 @@ describe("E2E Smoke — move and resize", () => {
 
 // ── Scenario 10: Stress test — many shapes ───────────────────
 
-describe("E2E Smoke — stress", () => {
-  it("handles 50 shapes and 49 connections", () => {
+describe("E2E Smoke — stress", async () => {
+  it("handles 50 shapes and 49 connections", async () => {
     const { intent } = makeServer();
     intent.executeSession('new "Stress Test"');
 
@@ -420,7 +420,7 @@ describe("E2E Smoke — stress", () => {
     for (let i = 0; i < 50; i++) {
       addOps.push(`add svc Node${i} theme:blue`);
     }
-    const addResults = intent.executeOps(addOps);
+    const addResults = await intent.executeOps(addOps);
     expect(addResults.every((r) => r.success)).toBe(true);
 
     // Connect them in a chain
@@ -428,7 +428,7 @@ describe("E2E Smoke — stress", () => {
     for (let i = 0; i < 49; i++) {
       connectOps.push(`connect Node${i} -> Node${i + 1} label:link${i}`);
     }
-    const connectResults = intent.executeOps(connectOps);
+    const connectResults = await intent.executeOps(connectOps);
     expect(connectResults.every((r) => r.success)).toBe(true);
 
     expect(intent.model.getDigest()).toBe("[50s 49e 0g p:1/1]");

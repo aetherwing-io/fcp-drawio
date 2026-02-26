@@ -4,14 +4,14 @@ import { resetIdCounters } from "../model/id.js";
 
 let layer: IntentLayer;
 
-beforeEach(() => {
+beforeEach(async () => {
   resetIdCounters();
   layer = new IntentLayer();
 });
 
-describe("IntentLayer — add", () => {
-  it("adds a shape with type and theme", () => {
-    const results = layer.executeOps(["add svc AuthService theme:blue"]);
+describe("IntentLayer — add", async () => {
+  it("adds a shape with type and theme", async () => {
+    const results = await layer.executeOps(["add svc AuthService theme:blue"]);
     expect(results).toHaveLength(1);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("+svc");
@@ -26,8 +26,8 @@ describe("IntentLayer — add", () => {
     expect(shape.type).toBe("svc");
   });
 
-  it("infers type from label when no type given", () => {
-    const results = layer.executeOps(["add UserDB"]);
+  it("infers type from label when no type given", async () => {
+    const results = await layer.executeOps(["add UserDB"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -35,8 +35,8 @@ describe("IntentLayer — add", () => {
     expect(shape.type).toBe("db");
   });
 
-  it("defaults to svc when type cannot be inferred", () => {
-    const results = layer.executeOps(["add Gateway"]);
+  it("defaults to svc when type cannot be inferred", async () => {
+    const results = await layer.executeOps(["add Gateway"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -45,8 +45,8 @@ describe("IntentLayer — add", () => {
     expect(shape.type).toBe("svc");
   });
 
-  it("handles batch add with count:N", () => {
-    const results = layer.executeOps(["add svc Worker count:3"]);
+  it("handles batch add with count:N", async () => {
+    const results = await layer.executeOps(["add svc Worker count:3"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -56,8 +56,8 @@ describe("IntentLayer — add", () => {
     expect(labels).toEqual(["Worker1", "Worker2", "Worker3"]);
   });
 
-  it("adds a shape at a specific position", () => {
-    const results = layer.executeOps(["add svc Frontend at:100,200"]);
+  it("adds a shape at a specific position", async () => {
+    const results = await layer.executeOps(["add svc Frontend at:100,200"]);
     expect(results[0].success).toBe(true);
 
     const shape = [...layer.model.getActivePage().shapes.values()][0];
@@ -65,8 +65,8 @@ describe("IntentLayer — add", () => {
     expect(shape.bounds.y).toBe(200);
   });
 
-  it("adds a shape with explicit size", () => {
-    const results = layer.executeOps(["add box Header size:200x40"]);
+  it("adds a shape with explicit size", async () => {
+    const results = await layer.executeOps(["add box Header size:200x40"]);
     expect(results[0].success).toBe(true);
 
     const shape = [...layer.model.getActivePage().shapes.values()][0];
@@ -75,17 +75,17 @@ describe("IntentLayer — add", () => {
   });
 });
 
-describe("IntentLayer — connect", () => {
-  beforeEach(() => {
-    layer.executeOps([
+describe("IntentLayer — connect", async () => {
+  beforeEach(async () => {
+    await layer.executeOps([
       "add svc AuthService",
       "add db UserDB",
       "add db TokenCache",
     ]);
   });
 
-  it("connects two shapes with directed arrow", () => {
-    const results = layer.executeOps(["connect AuthService -> UserDB label:queries"]);
+  it("connects two shapes with directed arrow", async () => {
+    const results = await layer.executeOps(["connect AuthService -> UserDB label:queries"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("~AuthService->UserDB");
     expect(results[0].message).toContain('"queries"');
@@ -94,16 +94,16 @@ describe("IntentLayer — connect", () => {
     expect(page.edges.size).toBe(1);
   });
 
-  it("creates chained connections", () => {
-    const results = layer.executeOps(["connect AuthService -> UserDB -> TokenCache"]);
+  it("creates chained connections", async () => {
+    const results = await layer.executeOps(["connect AuthService -> UserDB -> TokenCache"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
     expect(page.edges.size).toBe(2);
   });
 
-  it("handles bidirectional arrows", () => {
-    const results = layer.executeOps(["connect AuthService <-> UserDB"]);
+  it("handles bidirectional arrows", async () => {
+    const results = await layer.executeOps(["connect AuthService <-> UserDB"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -112,8 +112,8 @@ describe("IntentLayer — connect", () => {
     expect(edge.targetArrow).toBe("arrow");
   });
 
-  it("handles undirected edges", () => {
-    const results = layer.executeOps(["connect AuthService -- UserDB"]);
+  it("handles undirected edges", async () => {
+    const results = await layer.executeOps(["connect AuthService -- UserDB"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -122,51 +122,51 @@ describe("IntentLayer — connect", () => {
     expect(edge.targetArrow).toBe("none");
   });
 
-  it("returns error for unknown reference", () => {
-    const results = layer.executeOps(["connect AuthService -> NonExistent"]);
+  it("returns error for unknown reference", async () => {
+    const results = await layer.executeOps(["connect AuthService -> NonExistent"]);
     expect(results[0].success).toBe(false);
     expect(results[0].message).toContain("NonExistent");
   });
 });
 
-describe("IntentLayer — style", () => {
-  beforeEach(() => {
-    layer.executeOps([
+describe("IntentLayer — style", async () => {
+  beforeEach(async () => {
+    await layer.executeOps([
       "add db UserDB theme:green",
       "add db TokenCache theme:green",
       "add svc AuthService theme:blue",
     ]);
   });
 
-  it("styles a single shape by label", () => {
-    const results = layer.executeOps(["style AuthService fill:red"]);
+  it("styles a single shape by label", async () => {
+    const results = await layer.executeOps(["style AuthService fill:red"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("*styled");
     expect(results[0].message).toContain("1 shape");
   });
 
-  it("styles multiple shapes with selector", () => {
-    const results = layer.executeOps(["style @type:db fill:#ff0000"]);
+  it("styles multiple shapes with selector", async () => {
+    const results = await layer.executeOps(["style @type:db fill:#ff0000"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("2 shapes");
   });
 
-  it("returns error for unknown ref", () => {
-    const results = layer.executeOps(["style NonExistent fill:red"]);
+  it("returns error for unknown ref", async () => {
+    const results = await layer.executeOps(["style NonExistent fill:red"]);
     expect(results[0].success).toBe(false);
   });
 });
 
-describe("IntentLayer — group", () => {
-  beforeEach(() => {
-    layer.executeOps([
+describe("IntentLayer — group", async () => {
+  beforeEach(async () => {
+    await layer.executeOps([
       "add svc AuthService",
       "add db UserDB",
     ]);
   });
 
-  it("creates a group from multiple shapes", () => {
-    const results = layer.executeOps(["group AuthService UserDB as:Backend"]);
+  it("creates a group from multiple shapes", async () => {
+    const results = await layer.executeOps(["group AuthService UserDB as:Backend"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("!group");
     expect(results[0].message).toContain("Backend");
@@ -177,9 +177,9 @@ describe("IntentLayer — group", () => {
     expect(group!.memberIds.size).toBe(2);
   });
 
-  it("ungroups a group", () => {
-    layer.executeOps(["group AuthService UserDB as:Backend"]);
-    const results = layer.executeOps(["ungroup Backend"]);
+  it("ungroups a group", async () => {
+    await layer.executeOps(["group AuthService UserDB as:Backend"]);
+    const results = await layer.executeOps(["ungroup Backend"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("ungrouped");
 
@@ -188,78 +188,78 @@ describe("IntentLayer — group", () => {
   });
 });
 
-describe("IntentLayer — queries", () => {
-  beforeEach(() => {
-    layer.executeOps([
+describe("IntentLayer — queries", async () => {
+  beforeEach(async () => {
+    await layer.executeOps([
       "add svc AuthService theme:blue",
       "add db UserDB theme:green",
       "connect AuthService -> UserDB",
     ]);
   });
 
-  it("lists all shapes", () => {
+  it("lists all shapes", async () => {
     const result = layer.executeQuery("list");
     expect(result).toContain("AuthService(svc)");
     expect(result).toContain("UserDB(db)");
   });
 
-  it("lists filtered by type", () => {
+  it("lists filtered by type", async () => {
     const result = layer.executeQuery("list @type:db");
     expect(result).toContain("UserDB(db)");
     expect(result).not.toContain("AuthService");
   });
 
-  it("returns stats", () => {
+  it("returns stats", async () => {
     const result = layer.executeQuery("stats");
     expect(result).toContain("shapes: 2");
     expect(result).toContain("edges: 1");
   });
 
-  it("returns status", () => {
+  it("returns status", async () => {
     const result = layer.executeQuery("status");
     expect(result).toContain("Untitled");
     expect(result).toContain("AuthService(svc)");
     expect(result).toContain("UserDB(db)");
   });
 
-  it("describes a shape", () => {
+  it("describes a shape", async () => {
     const result = layer.executeQuery("describe AuthService");
     expect(result).toContain("AuthService (svc)");
     expect(result).toContain("position:");
     expect(result).toContain("size:");
   });
 
-  it("shows connections", () => {
+  it("shows connections", async () => {
     const result = layer.executeQuery("connections AuthService");
     expect(result).toContain("out:");
     expect(result).toContain("UserDB");
   });
 
-  it("finds shapes by text", () => {
+  it("finds shapes by text", async () => {
     const result = layer.executeQuery("find Auth");
     expect(result).toContain("AuthService");
   });
 
-  it("returns history", () => {
+  it("returns history", async () => {
     const result = layer.executeQuery("history 5");
     // Should contain recent events
     expect(result).toContain("+");
   });
 });
 
-describe("IntentLayer — session", () => {
-  it("creates a new diagram", () => {
+describe("IntentLayer — session", async () => {
+  it("creates a new diagram", async () => {
     const result = layer.executeSession('new "My Diagram"');
     expect(result).toContain("My Diagram");
     expect(layer.model.diagram.title).toBe("My Diagram");
   });
 
-  it("creates and restores checkpoints", () => {
-    layer.executeOps(["add svc AuthService"]);
+  it("creates and restores checkpoints", async () => {
+    await layer.executeOps(["add svc AuthService"]);
     const cpResult = layer.executeSession("checkpoint v1");
     expect(cpResult).toContain("v1");
 
-    layer.executeOps(["add db UserDB"]);
+    await layer.executeOps(["add db UserDB"]);
     expect(layer.model.getActivePage().shapes.size).toBe(2);
 
     const undoResult = layer.executeSession("undo to:v1");
@@ -267,8 +267,8 @@ describe("IntentLayer — session", () => {
     expect(layer.model.getActivePage().shapes.size).toBe(1);
   });
 
-  it("handles undo and redo", () => {
-    layer.executeOps(["add svc AuthService"]);
+  it("handles undo and redo", async () => {
+    await layer.executeOps(["add svc AuthService"]);
     expect(layer.model.getActivePage().shapes.size).toBe(1);
 
     const undoResult = layer.executeSession("undo");
@@ -280,46 +280,46 @@ describe("IntentLayer — session", () => {
     expect(layer.model.getActivePage().shapes.size).toBe(1);
   });
 
-  it("reports nothing to undo when empty", () => {
+  it("reports nothing to undo when empty", async () => {
     const result = layer.executeSession("undo");
     expect(result).toContain("nothing to undo");
   });
 });
 
-describe("IntentLayer — error handling", () => {
-  it("returns error for parse errors", () => {
-    const results = layer.executeOps(["bogus command"]);
+describe("IntentLayer — error handling", async () => {
+  it("returns error for parse errors", async () => {
+    const results = await layer.executeOps(["bogus command"]);
     expect(results[0].success).toBe(false);
     expect(results[0].message).toContain("unknown verb");
   });
 
-  it("returns error for unknown reference in connect", () => {
-    layer.executeOps(["add svc A"]);
-    const results = layer.executeOps(["connect A -> B"]);
+  it("returns error for unknown reference in connect", async () => {
+    await layer.executeOps(["add svc A"]);
+    const results = await layer.executeOps(["connect A -> B"]);
     expect(results[0].success).toBe(false);
   });
 
-  it("handles empty ops array", () => {
-    const results = layer.executeOps([]);
+  it("handles empty ops array", async () => {
+    const results = await layer.executeOps([]);
     expect(results).toHaveLength(0);
   });
 
-  it("returns error for empty op string", () => {
-    const results = layer.executeOps([""]);
+  it("returns error for empty op string", async () => {
+    const results = await layer.executeOps([""]);
     expect(results[0].success).toBe(false);
   });
 });
 
-describe("IntentLayer — define custom type", () => {
-  it("defines a custom type and uses it", () => {
-    const defineResult = layer.executeOps([
+describe("IntentLayer — define custom type", async () => {
+  it("defines a custom type and uses it", async () => {
+    const defineResult = await layer.executeOps([
       "define payment-svc base:svc theme:purple badge:PCI",
     ]);
     expect(defineResult[0].success).toBe(true);
     expect(defineResult[0].message).toContain("payment-svc");
 
     // Use the custom type
-    const addResult = layer.executeOps(["add payment-svc PaymentGateway"]);
+    const addResult = await layer.executeOps(["add payment-svc PaymentGateway"]);
     expect(addResult[0].success).toBe(true);
     expect(addResult[0].message).toContain("PaymentGateway");
     expect(addResult[0].message).toContain("purple");
@@ -334,38 +334,38 @@ describe("IntentLayer — define custom type", () => {
     expect(shape.metadata.badges![0].text).toBe("PCI");
   });
 
-  it("includes custom types in help output", () => {
-    layer.executeOps(["define my-svc base:svc theme:green"]);
+  it("includes custom types in help output", async () => {
+    await layer.executeOps(["define my-svc base:svc theme:green"]);
     const help = layer.getHelp();
     expect(help).toContain("CUSTOM TYPES:");
     expect(help).toContain("my-svc");
   });
 });
 
-describe("IntentLayer — remove", () => {
-  it("removes a shape", () => {
-    layer.executeOps(["add svc AuthService"]);
-    const results = layer.executeOps(["remove AuthService"]);
+describe("IntentLayer — remove", async () => {
+  it("removes a shape", async () => {
+    await layer.executeOps(["add svc AuthService"]);
+    const results = await layer.executeOps(["remove AuthService"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("-AuthService");
     expect(layer.model.getActivePage().shapes.size).toBe(0);
   });
 });
 
-describe("IntentLayer — label and badge", () => {
-  beforeEach(() => {
-    layer.executeOps(["add svc AuthService"]);
+describe("IntentLayer — label and badge", async () => {
+  beforeEach(async () => {
+    await layer.executeOps(["add svc AuthService"]);
   });
 
-  it("relabels a shape", () => {
-    const results = layer.executeOps(['label AuthService "Auth Gateway"']);
+  it("relabels a shape", async () => {
+    const results = await layer.executeOps(['label AuthService "Auth Gateway"']);
     expect(results[0].success).toBe(true);
     const shape = [...layer.model.getActivePage().shapes.values()][0];
     expect(shape.label).toBe("Auth Gateway");
   });
 
-  it("adds a badge to a shape", () => {
-    const results = layer.executeOps(['badge AuthService "v2"']);
+  it("adds a badge to a shape", async () => {
+    const results = await layer.executeOps(['badge AuthService "v2"']);
     expect(results[0].success).toBe(true);
     const shape = [...layer.model.getActivePage().shapes.values()][0];
     expect(shape.metadata.badges).toBeDefined();
@@ -373,33 +373,33 @@ describe("IntentLayer — label and badge", () => {
   });
 });
 
-describe("IntentLayer — page operations", () => {
-  it("adds and switches pages", () => {
-    const results = layer.executeOps(["page add Page-2"]);
+describe("IntentLayer — page operations", async () => {
+  it("adds and switches pages", async () => {
+    const results = await layer.executeOps(["page add Page-2"]);
     expect(results[0].success).toBe(true);
     expect(layer.model.diagram.pages).toHaveLength(2);
 
-    const switchResult = layer.executeOps(["page switch Page-1"]);
+    const switchResult = await layer.executeOps(["page switch Page-1"]);
     expect(switchResult[0].success).toBe(true);
     expect(layer.model.getActivePage().name).toBe("Page-1");
   });
 });
 
-describe("IntentLayer — move and resize", () => {
-  beforeEach(() => {
-    layer.executeOps(["add svc AuthService at:100,100"]);
+describe("IntentLayer — move and resize", async () => {
+  beforeEach(async () => {
+    await layer.executeOps(["add svc AuthService at:100,100"]);
   });
 
-  it("moves a shape to absolute position", () => {
-    const results = layer.executeOps(["move AuthService to:300,400"]);
+  it("moves a shape to absolute position", async () => {
+    const results = await layer.executeOps(["move AuthService to:300,400"]);
     expect(results[0].success).toBe(true);
     const shape = [...layer.model.getActivePage().shapes.values()][0];
     expect(shape.bounds.x).toBe(300);
     expect(shape.bounds.y).toBe(400);
   });
 
-  it("resizes a shape", () => {
-    const results = layer.executeOps(["resize AuthService to:200x100"]);
+  it("resizes a shape", async () => {
+    const results = await layer.executeOps(["resize AuthService to:200x100"]);
     expect(results[0].success).toBe(true);
     const shape = [...layer.model.getActivePage().shapes.values()][0];
     expect(shape.bounds.width).toBe(200);
@@ -407,14 +407,14 @@ describe("IntentLayer — move and resize", () => {
   });
 });
 
-describe("IntentLayer — swap", () => {
-  it("swaps positions of two shapes", () => {
-    layer.executeOps([
+describe("IntentLayer — swap", async () => {
+  it("swaps positions of two shapes", async () => {
+    await layer.executeOps([
       "add svc A at:100,100",
       "add svc B at:300,300",
     ]);
 
-    const results = layer.executeOps(["swap A B"]);
+    const results = await layer.executeOps(["swap A B"]);
     expect(results[0].success).toBe(true);
 
     const page = layer.model.getActivePage();
@@ -429,9 +429,9 @@ describe("IntentLayer — swap", () => {
   });
 });
 
-describe("IntentLayer — disconnect", () => {
-  it("disconnects two shapes", () => {
-    layer.executeOps([
+describe("IntentLayer — disconnect", async () => {
+  it("disconnects two shapes", async () => {
+    await layer.executeOps([
       "add svc A",
       "add svc B",
       "connect A -> B",
@@ -439,73 +439,158 @@ describe("IntentLayer — disconnect", () => {
 
     expect(layer.model.getActivePage().edges.size).toBe(1);
 
-    const results = layer.executeOps(["disconnect A -> B"]);
+    const results = await layer.executeOps(["disconnect A -> B"]);
     expect(results[0].success).toBe(true);
     expect(layer.model.getActivePage().edges.size).toBe(0);
   });
 });
 
-describe("IntentLayer — title and checkpoint ops", () => {
-  it("sets the diagram title", () => {
-    const results = layer.executeOps(['title "My Architecture"']);
+describe("IntentLayer — title and checkpoint ops", async () => {
+  it("sets the diagram title", async () => {
+    const results = await layer.executeOps(['title "My Architecture"']);
     expect(results[0].success).toBe(true);
     expect(layer.model.diagram.title).toBe("My Architecture");
   });
 
-  it("creates a checkpoint via ops", () => {
-    const results = layer.executeOps(["checkpoint v1"]);
+  it("creates a checkpoint via ops", async () => {
+    const results = await layer.executeOps(["checkpoint v1"]);
     expect(results[0].success).toBe(true);
     expect(results[0].message).toContain("v1");
   });
 });
 
-describe("IntentLayer — repair suggestions", () => {
-  it("suggests corrected ref for typos", () => {
+describe("IntentLayer — repair suggestions", async () => {
+  it("suggests corrected ref for typos", async () => {
     layer.executeSession('new "Test"');
-    layer.executeOps(["add svc AuthService theme:blue"]);
-    const results = layer.executeOps(["style AthService fill:red"]);
+    await layer.executeOps(["add svc AuthService theme:blue"]);
+    const results = await layer.executeOps(["style AthService fill:red"]);
     expect(results[0].success).toBe(false);
     expect(results[0].suggestion).toBeDefined();
     expect(results[0].suggestion).toContain("AuthService");
   });
 
-  it("suggests type-qualified ref for ambiguous labels", () => {
+  it("suggests type-qualified ref for ambiguous labels", async () => {
     layer.executeSession('new "Test"');
-    layer.executeOps([
+    await layer.executeOps([
       "add svc Service theme:blue",
       "add db Service theme:green",
     ]);
-    const results = layer.executeOps(["style Service fill:red"]);
+    const results = await layer.executeOps(["style Service fill:red"]);
     expect(results[0].success).toBe(false);
     expect(results[0].suggestion).toBeDefined();
     expect(results[0].suggestion).toContain(":");
   });
 
-  it("no suggestion when ref is completely unknown", () => {
+  it("no suggestion when ref is completely unknown", async () => {
     layer.executeSession('new "Test"');
-    const results = layer.executeOps(["style CompletelyRandom fill:red"]);
+    const results = await layer.executeOps(["style CompletelyRandom fill:red"]);
     expect(results[0].success).toBe(false);
     // May or may not have suggestion depending on whether there are any shapes
   });
 
-  it("suggests corrected ref for typos in connect", () => {
+  it("suggests corrected ref for typos in connect", async () => {
     layer.executeSession('new "Test"');
-    layer.executeOps([
+    await layer.executeOps([
       "add svc AuthService theme:blue",
       "add db UserDB theme:green",
     ]);
-    const results = layer.executeOps(["connect AthService -> UserDB"]);
+    const results = await layer.executeOps(["connect AthService -> UserDB"]);
     expect(results[0].success).toBe(false);
     expect(results[0].suggestion).toBeDefined();
     expect(results[0].suggestion).toContain("AuthService");
   });
 
-  it("suggests corrected ref for typos in remove", () => {
+  it("suggests corrected ref for typos in remove", async () => {
     layer.executeSession('new "Test"');
-    layer.executeOps(["add svc AuthService theme:blue"]);
-    const results = layer.executeOps(["remove AthService"]);
+    await layer.executeOps(["add svc AuthService theme:blue"]);
+    const results = await layer.executeOps(["remove AthService"]);
     expect(results[0].success).toBe(false);
     expect(results[0].suggestion).toBeDefined();
     expect(results[0].suggestion).toContain("AuthService");
+  });
+});
+
+describe("IntentLayer — layout", () => {
+  it("repositions shapes after layout", async () => {
+    await layer.executeOps([
+      "add svc A at:0,0",
+      "add svc B at:0,0",
+      "add svc C at:0,0",
+      "connect A -> B",
+      "connect B -> C",
+    ]);
+
+    // All shapes start at same position
+    const page = layer.model.getActivePage();
+    const shapesBefore = [...page.shapes.values()];
+    expect(shapesBefore.every((s) => s.bounds.x === 0 && s.bounds.y === 0)).toBe(true);
+
+    const results = await layer.executeOps(["layout @all algo:layered dir:TB"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("repositioned");
+    expect(results[0].message).toContain("3 shapes");
+
+    // Shapes should now have distinct positions
+    const shapesAfter = [...page.shapes.values()];
+    const positions = new Set(shapesAfter.map((s) => `${s.bounds.x},${s.bounds.y}`));
+    expect(positions.size).toBe(3);
+  });
+
+  it("supports LR direction", async () => {
+    await layer.executeOps([
+      "add svc A at:0,0",
+      "add svc B at:0,0",
+      "connect A -> B",
+    ]);
+
+    const results = await layer.executeOps(["layout @all algo:layered dir:LR"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const a = [...page.shapes.values()].find((s) => s.label === "A")!;
+    const b = [...page.shapes.values()].find((s) => s.label === "B")!;
+    expect(b.bounds.x).toBeGreaterThan(a.bounds.x);
+  });
+
+  it("returns error for invalid algorithm", async () => {
+    await layer.executeOps(["add svc A"]);
+    const results = await layer.executeOps(["layout @all algo:bogus dir:TB"]);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown algorithm");
+  });
+
+  it("returns error for invalid direction", async () => {
+    await layer.executeOps(["add svc A"]);
+    const results = await layer.executeOps(["layout @all algo:layered dir:XX"]);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown direction");
+  });
+
+  it("undo restores original positions after layout", async () => {
+    await layer.executeOps([
+      "add svc A at:100,200",
+      "add svc B at:300,400",
+      "connect A -> B",
+    ]);
+
+    const page = layer.model.getActivePage();
+    const aBefore = [...page.shapes.values()].find((s) => s.label === "A")!;
+    expect(aBefore.bounds.x).toBe(100);
+    expect(aBefore.bounds.y).toBe(200);
+
+    await layer.executeOps(["layout @all algo:layered dir:TB"]);
+
+    // Positions changed
+    const aAfterLayout = [...page.shapes.values()].find((s) => s.label === "A")!;
+    const posChanged = aAfterLayout.bounds.x !== 100 || aAfterLayout.bounds.y !== 200;
+    expect(posChanged).toBe(true);
+
+    // Undo all layout events (one per shape repositioned)
+    layer.executeSession("undo");
+    layer.executeSession("undo");
+
+    const aAfterUndo = [...page.shapes.values()].find((s) => s.label === "A")!;
+    expect(aAfterUndo.bounds.x).toBe(100);
+    expect(aAfterUndo.bounds.y).toBe(200);
   });
 });

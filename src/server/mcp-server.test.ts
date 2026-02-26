@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { createServer } from "./mcp-server.js";
 
-describe("MCP Server — createServer", () => {
-  it("creates server and intent layer successfully", () => {
+describe("MCP Server — createServer", async () => {
+  it("creates server and intent layer successfully", async () => {
     const { server, intent } = createServer();
     expect(server).toBeDefined();
     expect(intent).toBeDefined();
   });
 
-  it("intent.getHelp() returns model map text", () => {
+  it("intent.getHelp() returns model map text", async () => {
     const { intent } = createServer();
     const help = intent.getHelp();
     expect(typeof help).toBe("string");
     expect(help.length).toBeGreaterThan(0);
   });
 
-  it("intent.getHelp() contains NODE TYPES section", () => {
+  it("intent.getHelp() contains NODE TYPES section", async () => {
     const { intent } = createServer();
     const help = intent.getHelp();
     expect(help).toContain("NODE TYPES:");
@@ -27,7 +27,7 @@ describe("MCP Server — createServer", () => {
     expect(help).toContain("actor");
   });
 
-  it("intent.getHelp() contains THEMES section", () => {
+  it("intent.getHelp() contains THEMES section", async () => {
     const { intent } = createServer();
     const help = intent.getHelp();
     expect(help).toContain("THEMES");
@@ -37,7 +37,7 @@ describe("MCP Server — createServer", () => {
     expect(help).toContain("purple");
   });
 
-  it("intent.getHelp() contains OPERATIONS section", () => {
+  it("intent.getHelp() contains OPERATIONS section", async () => {
     const { intent } = createServer();
     const help = intent.getHelp();
     expect(help).toContain("OPERATIONS:");
@@ -47,7 +47,7 @@ describe("MCP Server — createServer", () => {
     expect(help).toContain("define");
   });
 
-  it("intent.getHelp() contains SELECTORS section", () => {
+  it("intent.getHelp() contains SELECTORS section", async () => {
     const { intent } = createServer();
     const help = intent.getHelp();
     expect(help).toContain("SELECTORS:");
@@ -56,9 +56,9 @@ describe("MCP Server — createServer", () => {
     expect(help).toContain("@all");
   });
 
-  it("intent.getHelp() includes custom types after define", () => {
+  it("intent.getHelp() includes custom types after define", async () => {
     const { intent } = createServer();
-    intent.executeOps(["define my-svc base:svc theme:green badge:OK"]);
+    await intent.executeOps(["define my-svc base:svc theme:green badge:OK"]);
     const help = intent.getHelp();
     expect(help).toContain("CUSTOM TYPES:");
     expect(help).toContain("my-svc");

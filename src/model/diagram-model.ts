@@ -400,6 +400,61 @@ export class DiagramModel {
     return `[${page.shapes.size}s ${page.edges.size}e ${page.groups.size}g p:${pageIdx}/${totalPages}]`;
   }
 
+  // ── Layout application ──────────────────────────────────────
+
+  /**
+   * Apply an ELK layout result: update shape positions, edge waypoints, and recompute group bounds.
+   * Emits shape_modified/edge_modified events for undo support.
+   */
+  applyLayout(result: {
+    shapePositions: Map<string, { x: number; y: number }>;
+    edgeWaypoints: Map<string, Point[]>;
+  }): number {
+    const page = this.getActivePage();
+    let count = 0;
+
+    // Update shape positions
+    for (const [id, pos] of result.shapePositions) {
+      const shape = page.shapes.get(id);
+      if (shape) {
+        const before = { bounds: { ...shape.bounds } };
+        shape.bounds = { ...shape.bounds, x: pos.x, y: pos.y };
+        shape.modifiedAt = nextSequence();
+        this.emit({
+          type: "shape_modified",
+          id,
+          before,
+          after: { bounds: { ...shape.bounds } },
+        });
+        count++;
+      }
+    }
+
+    // Update edge waypoints
+    for (const [id, waypoints] of result.edgeWaypoints) {
+      const edge = page.edges.get(id);
+      if (edge && waypoints.length > 0) {
+        const before = { waypoints: [...edge.waypoints] };
+        edge.waypoints = waypoints;
+        edge.modifiedAt = nextSequence();
+        this.emit({
+          type: "edge_modified",
+          id,
+          before,
+          after: { waypoints: [...waypoints] },
+        });
+      }
+    }
+
+    // Recompute group bounds
+    for (const [, group] of page.groups) {
+      this.recomputeGroupBounds(group, page);
+    }
+
+    this.rebuildRegistry();
+    return count;
+  }
+
   // ── Position computation ─────────────────────────────────
 
   private computePosition(

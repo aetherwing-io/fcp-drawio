@@ -10,12 +10,12 @@ import { join } from "node:path";
 let intent: IntentLayer;
 let tmpFiles: string[] = [];
 
-beforeEach(() => {
+beforeEach(async () => {
   resetIdCounters();
   intent = new IntentLayer();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const f of tmpFiles) {
     if (existsSync(f)) unlinkSync(f);
   }
@@ -30,14 +30,14 @@ function tmpFile(name: string): string {
 
 // ── Full session: create → edit → save → reopen ────────────
 
-describe("Integration — full session round-trip", () => {
-  it("creates a diagram, edits it, saves, and reopens", () => {
+describe("Integration — full session round-trip", async () => {
+  it("creates a diagram, edits it, saves, and reopens", async () => {
     // Create
     const newResult = intent.executeSession('new "Order System"');
     expect(newResult).toContain("Order System");
 
     // Add shapes
-    const ops = intent.executeOps([
+    const ops = await intent.executeOps([
       "add api Gateway theme:orange",
       "add svc OrderService theme:blue near:Gateway dir:below",
       "add svc PaymentService theme:blue near:OrderService dir:right",
@@ -80,7 +80,7 @@ describe("Integration — full session round-trip", () => {
     expect(list).toContain("OrderDB");
 
     // Continue editing the reopened file
-    const moreOps = intent2.executeOps([
+    const moreOps = await intent2.executeOps([
       "add svc NotificationService theme:purple near:PaymentService dir:right",
       "connect PaymentService -> NotificationService label:notify",
     ]);
@@ -93,11 +93,11 @@ describe("Integration — full session round-trip", () => {
 
 // ── Batch operations ───────────────────────────────────────
 
-describe("Integration — batch operations", () => {
-  it("processes all ops in array, partial failure doesn't lose successes", () => {
+describe("Integration — batch operations", async () => {
+  it("processes all ops in array, partial failure doesn't lose successes", async () => {
     intent.executeSession('new "Test"');
 
-    const ops = intent.executeOps([
+    const ops = await intent.executeOps([
       "add svc ValidService theme:blue",
       "connect ValidService -> NonExistent label:fail",  // will fail
       "add db ValidDB theme:green",
@@ -116,20 +116,20 @@ describe("Integration — batch operations", () => {
 
 // ── Multi-page ─────────────────────────────────────────────
 
-describe("Integration — multi-page diagrams", () => {
-  it("creates shapes on multiple pages and round-trips", () => {
+describe("Integration — multi-page diagrams", async () => {
+  it("creates shapes on multiple pages and round-trips", async () => {
     intent.executeSession('new "Multi-Page"');
 
     // Page 1
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Frontend theme:blue",
       "add svc Backend theme:green",
       "connect Frontend -> Backend label:API",
     ]);
 
     // Page 2
-    intent.executeOps(["page add Deployment"]);
-    intent.executeOps([
+    await intent.executeOps(["page add Deployment"]);
+    await intent.executeOps([
       "add cloud AWS theme:orange",
       "add db RDS theme:green near:AWS dir:below",
     ]);
@@ -151,18 +151,18 @@ describe("Integration — multi-page diagrams", () => {
 
 // ── Undo/redo across checkpoints ───────────────────────────
 
-describe("Integration — undo/redo with checkpoints", () => {
-  it("undoes to checkpoint and redoes correctly", () => {
+describe("Integration — undo/redo with checkpoints", async () => {
+  it("undoes to checkpoint and redoes correctly", async () => {
     intent.executeSession('new "Undo Test"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc A theme:blue",
       "add svc B theme:blue",
     ]);
 
     intent.executeSession("checkpoint v1");
 
-    intent.executeOps([
+    await intent.executeOps([
       "add svc C theme:red",
       "add svc D theme:red",
     ]);
@@ -188,10 +188,10 @@ describe("Integration — undo/redo with checkpoints", () => {
 
 // ── XML round-trip with styled shapes ──────────────────────
 
-describe("Integration — XML round-trip fidelity", () => {
-  it("preserves theme colors through serialize/deserialize", () => {
+describe("Integration — XML round-trip fidelity", async () => {
+  it("preserves theme colors through serialize/deserialize", async () => {
     intent.executeSession('new "Style Test"');
-    intent.executeOps([
+    await intent.executeOps([
       "add svc BlueService theme:blue",
       "add db GreenDB theme:green",
       "add api OrangeAPI theme:orange",
@@ -218,9 +218,9 @@ describe("Integration — XML round-trip fidelity", () => {
     expect(greenDB!.type).toBe("db");
   });
 
-  it("preserves edge labels and styles", () => {
+  it("preserves edge labels and styles", async () => {
     intent.executeSession('new "Edge Test"');
-    intent.executeOps([
+    await intent.executeOps([
       "add svc A theme:blue",
       "add svc B theme:blue near:A dir:right",
       "connect A -> B label:calls style:dashed",
@@ -237,11 +237,11 @@ describe("Integration — XML round-trip fidelity", () => {
 
 // ── Custom types end-to-end ────────────────────────────────
 
-describe("Integration — custom types", () => {
-  it("defines and uses a custom type with badge", () => {
+describe("Integration — custom types", async () => {
+  it("defines and uses a custom type with badge", async () => {
     intent.executeSession('new "Custom Types"');
 
-    intent.executeOps([
+    await intent.executeOps([
       "define payment-svc base:svc theme:purple badge:PCI",
       "add svc Placeholder theme:blue",
       "add payment-svc OrderPayment near:Placeholder dir:below",
@@ -259,33 +259,33 @@ describe("Integration — custom types", () => {
 
 // ── Error handling integration ─────────────────────────────
 
-describe("Integration — error handling", () => {
-  it("handles typo in reference with suggestion", () => {
+describe("Integration — error handling", async () => {
+  it("handles typo in reference with suggestion", async () => {
     intent.executeSession('new "Error Test"');
-    intent.executeOps(["add svc AuthService theme:blue"]);
+    await intent.executeOps(["add svc AuthService theme:blue"]);
 
-    const ops = intent.executeOps(["style AthService fill:red"]);
+    const ops = await intent.executeOps(["style AthService fill:red"]);
     expect(ops[0].success).toBe(false);
     expect(ops[0].message).toContain("AuthService");  // suggestion
   });
 
-  it("handles ambiguous reference", () => {
+  it("handles ambiguous reference", async () => {
     intent.executeSession('new "Ambiguous Test"');
-    intent.executeOps([
+    await intent.executeOps([
       "add svc Service theme:blue",
       "add db Service theme:green",
     ]);
 
-    const ops = intent.executeOps(["style Service fill:red"]);
+    const ops = await intent.executeOps(["style Service fill:red"]);
     expect(ops[0].success).toBe(false);
     expect(ops[0].message).toContain("matches");
   });
 
-  it("handles empty selector gracefully", () => {
+  it("handles empty selector gracefully", async () => {
     intent.executeSession('new "Empty Selector"');
-    intent.executeOps(["add svc OnlyService theme:blue"]);
+    await intent.executeOps(["add svc OnlyService theme:blue"]);
 
-    const ops = intent.executeOps(["style @type:db fill:green"]);
+    const ops = await intent.executeOps(["style @type:db fill:green"]);
     expect(ops[0].success).toBe(false);
     expect(ops[0].message).toContain("0 shapes");
   });
@@ -293,13 +293,13 @@ describe("Integration — error handling", () => {
 
 // ── Spec example session (Appendix A) ─────────────────────
 
-describe("Integration — spec example session", () => {
-  it("reproduces the order processing example from the spec", () => {
+describe("Integration — spec example session", async () => {
+  it("reproduces the order processing example from the spec", async () => {
     // Phase 1: Create
     intent.executeSession('new "Order Processing System"');
 
     // Phase 2: Build shapes
-    const addResults = intent.executeOps([
+    const addResults = await intent.executeOps([
       "add api Gateway theme:orange",
       "add svc OrderService theme:blue near:Gateway dir:below",
       "add svc PaymentService theme:blue near:OrderService dir:right",
@@ -313,7 +313,7 @@ describe("Integration — spec example session", () => {
     expect(addResults).toHaveLength(8);
 
     // Phase 3: Connect
-    const connectResults = intent.executeOps([
+    const connectResults = await intent.executeOps([
       'connect Gateway -> OrderService label:"POST /orders"',
       "connect OrderService -> PaymentService label:processPayment",
       "connect OrderService -> EventBus label:orderCreated",
@@ -325,7 +325,7 @@ describe("Integration — spec example session", () => {
     expect(connectResults.every((r) => r.success)).toBe(true);
 
     // Phase 4: Organize
-    const orgResults = intent.executeOps([
+    const orgResults = await intent.executeOps([
       "group OrderService PaymentService NotificationService as:Services",
       "group OrderDB PaymentDB as:Databases",
       "checkpoint initial-layout",
@@ -356,12 +356,12 @@ describe("Integration — spec example session", () => {
 
 // ── State digest ────────────────────────────────────────────
 
-describe("Integration — state digest", () => {
-  it("digest updates after mutations", () => {
+describe("Integration — state digest", async () => {
+  it("digest updates after mutations", async () => {
     intent.executeSession('new "Digest Test"');
 
     // After adding shapes, digest should reflect counts
-    intent.executeOps([
+    await intent.executeOps([
       "add svc A theme:blue",
       "add svc B theme:blue",
       "connect A -> B label:test",

@@ -594,3 +594,268 @@ describe("IntentLayer — layout", () => {
     expect(aAfterUndo.bounds.y).toBe(200);
   });
 });
+
+// ── Map query ────────────────────────────────────────────────
+
+describe("IntentLayer — map query", () => {
+  it("returns empty map for new diagram", () => {
+    const result = layer.executeQuery("map");
+    expect(result).toBe("map: empty diagram");
+  });
+
+  it("returns spatial summary with shapes", async () => {
+    await layer.executeOps([
+      "add svc AuthService theme:blue at:100,200",
+      "add db UserDB theme:green at:300,400",
+    ]);
+    const result = layer.executeQuery("map");
+    expect(result).toContain("map:");
+    expect(result).toContain("flow:TB");
+    expect(result).toContain("2s 0e 0g");
+    expect(result).toContain("AuthService(svc)");
+    expect(result).toContain("UserDB(db)");
+    expect(result).toContain("ungrouped");
+  });
+
+  it("shows groups with member positions", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:300,100",
+      "group A B as:Backend",
+    ]);
+    const result = layer.executeQuery("map");
+    expect(result).toContain("[Backend]");
+    expect(result).toContain("A(svc)");
+    expect(result).toContain("B(svc)");
+    expect(result).not.toContain("ungrouped");
+  });
+
+  it("includes edge count and flow direction", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:100,300",
+      "connect A -> B",
+    ]);
+    const result = layer.executeQuery("map");
+    expect(result).toContain("2s 1e 0g");
+    expect(result).toContain("flow:TB"); // inferred from A above B
+  });
+
+  it("uses explicit flowDirection when set", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:300,100",
+      "orient LR",
+    ]);
+    const result = layer.executeQuery("map");
+    expect(result).toContain("flow:LR");
+  });
+});
+
+// ── Orient ───────────────────────────────────────────────────
+
+describe("IntentLayer — orient", () => {
+  it("sets flow direction on the page", async () => {
+    const results = await layer.executeOps(["orient TB"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toBe("@orient TB");
+    expect(layer.model.getActivePage().flowDirection).toBe("TB");
+  });
+
+  it("accepts all four directions", async () => {
+    for (const dir of ["TB", "LR", "BT", "RL"]) {
+      const results = await layer.executeOps([`orient ${dir}`]);
+      expect(results[0].success).toBe(true);
+      expect(layer.model.getActivePage().flowDirection).toBe(dir);
+    }
+  });
+
+  it("rejects invalid directions", async () => {
+    const results = await layer.executeOps(["orient XY"]);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown direction");
+  });
+
+  it("is case-insensitive", async () => {
+    const results = await layer.executeOps(["orient lr"]);
+    expect(results[0].success).toBe(true);
+    expect(layer.model.getActivePage().flowDirection).toBe("LR");
+  });
+});
+
+// ── Canvas bounds in digest ──────────────────────────────────
+
+describe("IntentLayer — canvas bounds in digest", () => {
+  it("includes canvas size in digest when shapes exist", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,200",
+    ]);
+    const digest = layer.model.getDigest();
+    expect(digest).toMatch(/\[1s 0e 0g \d+x\d+ p:1\/1\]/);
+  });
+
+  it("omits canvas size for empty diagram", () => {
+    const digest = layer.model.getDigest();
+    expect(digest).toBe("[0s 0e 0g p:1/1]");
+  });
+});
+
+// ── Layout auto-sets flowDirection ───────────────────────────
+
+describe("IntentLayer — layout sets flowDirection", () => {
+  it("sets flowDirection after layout", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue",
+      "add svc B theme:blue",
+      "connect A -> B",
+    ]);
+    await layer.executeOps(["layout @all algo:layered dir:LR"]);
+    expect(layer.model.getActivePage().flowDirection).toBe("LR");
+  });
+});
+
+// ── Canvas-relative positioning ──────────────────────────────
+
+describe("IntentLayer — canvas-relative positioning", () => {
+  it("moves a shape to a named region", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:500,500",
+    ]);
+    const results = await layer.executeOps(["move A to:top-left"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("@moved A");
+
+    const page = layer.model.getActivePage();
+    const shapeA = [...page.shapes.values()].find((s) => s.label === "A")!;
+    // A should be in the top-left region, which means smaller x,y than center
+    expect(shapeA.bounds.x).toBeLessThan(300);
+    expect(shapeA.bounds.y).toBeLessThan(300);
+  });
+
+  it("adds a shape at a named region", async () => {
+    await layer.executeOps([
+      "add svc Existing theme:blue at:100,100",
+      "add svc New theme:green at:center",
+    ]);
+    const page = layer.model.getActivePage();
+    const newShape = [...page.shapes.values()].find((s) => s.label === "New")!;
+    // center of canvas region (with margin around 100,100 shape)
+    expect(newShape).toBeDefined();
+  });
+
+  it("falls back to X,Y when not a valid region", async () => {
+    await layer.executeOps(["add svc A theme:blue at:100,100"]);
+    const results = await layer.executeOps(["move A to:300,400"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shapeA = [...page.shapes.values()].find((s) => s.label === "A")!;
+    expect(shapeA.bounds.x).toBe(300);
+    expect(shapeA.bounds.y).toBe(400);
+  });
+});
+
+// ── Group move ───────────────────────────────────────────────
+
+describe("IntentLayer — group move", () => {
+  it("moves all members of a group", async () => {
+    await layer.executeOps([
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:300,100",
+      "group A B as:Backend",
+    ]);
+
+    const page = layer.model.getActivePage();
+    const aBefore = [...page.shapes.values()].find((s) => s.label === "A")!.bounds.x;
+
+    const results = await layer.executeOps(["move @group:Backend to:500,500 strict:true"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("@moved group Backend");
+    expect(results[0].message).toContain("2 shapes");
+
+    const aAfter = [...page.shapes.values()].find((s) => s.label === "A")!;
+    // A should have moved from the original position
+    expect(aAfter.bounds.x).not.toBe(aBefore);
+  });
+
+  it("rejects unknown group", async () => {
+    const results = await layer.executeOps(["move @group:Unknown to:100,100"]);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown group");
+  });
+});
+
+// ── Collision detection ──────────────────────────────────────
+
+describe("IntentLayer — collision prevention", () => {
+  it("pushes downstream shapes after move", async () => {
+    await layer.executeOps([
+      "orient TB",
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:100,250",
+    ]);
+
+    // Move A to overlap B's position
+    const results = await layer.executeOps(["move A to:100,230"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("shifted");
+
+    // B should have been pushed downstream
+    const page = layer.model.getActivePage();
+    const shapeB = [...page.shapes.values()].find((s) => s.label === "B")!;
+    expect(shapeB.bounds.y).toBeGreaterThan(250);
+  });
+
+  it("does not push with strict:true", async () => {
+    await layer.executeOps([
+      "orient TB",
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:100,250",
+    ]);
+
+    const results = await layer.executeOps(["move A to:100,230 strict:true"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).not.toContain("shifted");
+
+    // B should NOT have moved
+    const page = layer.model.getActivePage();
+    const shapeB = [...page.shapes.values()].find((s) => s.label === "B")!;
+    expect(shapeB.bounds.y).toBe(250);
+  });
+
+  it("ripples through multiple shapes", async () => {
+    await layer.executeOps([
+      "orient TB",
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:100,220",
+      "add svc C theme:blue at:100,340",
+    ]);
+
+    // Move A down to overlap B, which should cascade to C
+    const results = await layer.executeOps(["move A to:100,200"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shapes = [...page.shapes.values()].sort((a, b) => a.bounds.y - b.bounds.y);
+    // Each shape should be at least 30px gap apart
+    expect(shapes[1].bounds.y).toBeGreaterThanOrEqual(shapes[0].bounds.y + shapes[0].bounds.height + 30);
+    expect(shapes[2].bounds.y).toBeGreaterThanOrEqual(shapes[1].bounds.y + shapes[1].bounds.height + 30);
+  });
+
+  it("only pushes downstream, not upstream", async () => {
+    await layer.executeOps([
+      "orient TB",
+      "add svc A theme:blue at:100,100",
+      "add svc B theme:blue at:100,300",
+    ]);
+
+    // Move B up to overlap A's area — A is upstream so should NOT move
+    const results = await layer.executeOps(["move B to:100,120"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shapeA = [...page.shapes.values()].find((s) => s.label === "A")!;
+    expect(shapeA.bounds.y).toBe(100); // A unchanged
+  });
+});

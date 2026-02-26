@@ -302,8 +302,9 @@ function serializePage(page: Page): string {
     }
   }
 
+  const flowAttr = page.flowDirection ? ` flowDirection="${escapeXml(page.flowDirection)}"` : "";
   return (
-    `  <diagram id="${escapeXml(page.id)}" name="${escapeXml(page.name)}">\n` +
+    `  <diagram id="${escapeXml(page.id)}" name="${escapeXml(page.name)}"${flowAttr}>\n` +
     `    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1">\n` +
     `    <root>\n` +
     cells.join("\n") + "\n" +

@@ -1,4 +1,4 @@
-import type { Shape, Edge, Group, ThemeName } from "../types/index.js";
+import type { Shape, Edge, Group, Bounds, ThemeName } from "../types/index.js";
 import type { DiagramModel } from "../model/diagram-model.js";
 import { THEMES } from "../lib/themes.js";
 
@@ -221,4 +221,164 @@ export function formatHistory(events: import("../types/index.js").DiagramEvent[]
       case "checkpoint": return `checkpoint "${e.name}"`;
     }
   }).join("\n");
+}
+
+// ── Spatial region classification ────────────────────────────
+
+type RegionRow = "top" | "middle" | "bottom";
+type RegionCol = "left" | "center" | "right";
+type Region = `${RegionRow}-${RegionCol}`;
+
+function classifyRegion(cx: number, cy: number, canvas: Bounds): Region {
+  const thirdW = canvas.width / 3;
+  const thirdH = canvas.height / 3;
+  const rx = cx - canvas.x;
+  const ry = cy - canvas.y;
+
+  const col: RegionCol = rx < thirdW ? "left" : rx < thirdW * 2 ? "center" : "right";
+  const row: RegionRow = ry < thirdH ? "top" : ry < thirdH * 2 ? "middle" : "bottom";
+  return `${row}-${col}`;
+}
+
+/**
+ * Infer the dominant flow direction from edge source→target positions.
+ * Returns TB/LR/BT/RL or null if undetermined.
+ */
+function inferFlowDirection(model: DiagramModel): string | null {
+  const page = model.getActivePage();
+  if (page.edges.size === 0) return null;
+
+  let downCount = 0, upCount = 0, rightCount = 0, leftCount = 0;
+
+  for (const edge of page.edges.values()) {
+    const src = page.shapes.get(edge.sourceId);
+    const tgt = page.shapes.get(edge.targetId);
+    if (!src || !tgt) continue;
+
+    const srcCy = src.bounds.y + src.bounds.height / 2;
+    const tgtCy = tgt.bounds.y + tgt.bounds.height / 2;
+    const srcCx = src.bounds.x + src.bounds.width / 2;
+    const tgtCx = tgt.bounds.x + tgt.bounds.width / 2;
+
+    const dy = tgtCy - srcCy;
+    const dx = tgtCx - srcCx;
+
+    if (Math.abs(dy) > Math.abs(dx)) {
+      if (dy > 0) downCount++;
+      else upCount++;
+    } else {
+      if (dx > 0) rightCount++;
+      else leftCount++;
+    }
+  }
+
+  const max = Math.max(downCount, upCount, rightCount, leftCount);
+  if (max === 0) return null;
+  if (max === downCount) return "TB";
+  if (max === rightCount) return "LR";
+  if (max === upCount) return "BT";
+  return "RL";
+}
+
+/**
+ * Format a spatial map of the diagram.
+ * Compact summary: canvas size, flow direction, groups with positions, ungrouped shapes.
+ */
+export function formatMap(model: DiagramModel): string {
+  const page = model.getActivePage();
+  const canvas = model.computeCanvasBounds();
+
+  if (!canvas || page.shapes.size === 0) {
+    return "map: empty diagram";
+  }
+
+  const flow = page.flowDirection ?? inferFlowDirection(model) ?? "TB";
+  const canvasW = Math.round(canvas.width);
+  const canvasH = Math.round(canvas.height);
+
+  const lines: string[] = [];
+  lines.push(`map: ${canvasW}x${canvasH} flow:${flow} | ${page.shapes.size}s ${page.edges.size}e ${page.groups.size}g`);
+
+  // Collect grouped shapes
+  const groupedShapeIds = new Set<string>();
+  const groupEntries: { group: Group; shapes: Shape[]; region: Region; sortY: number; sortX: number }[] = [];
+
+  for (const group of page.groups.values()) {
+    const members: Shape[] = [];
+    for (const id of group.memberIds) {
+      const shape = page.shapes.get(id);
+      if (shape) {
+        members.push(shape);
+        groupedShapeIds.add(id);
+      }
+    }
+    const gcx = group.bounds.x + group.bounds.width / 2;
+    const gcy = group.bounds.y + group.bounds.height / 2;
+    const region = classifyRegion(gcx, gcy, canvas);
+
+    groupEntries.push({
+      group,
+      shapes: members,
+      region,
+      sortY: group.bounds.y,
+      sortX: group.bounds.x,
+    });
+  }
+
+  // Collect ungrouped shapes
+  const ungrouped: Shape[] = [];
+  for (const shape of page.shapes.values()) {
+    if (!groupedShapeIds.has(shape.id)) {
+      ungrouped.push(shape);
+    }
+  }
+
+  // Sort: flow-aware (TB = sort by y then x, LR = sort by x then y)
+  const isVertical = flow === "TB" || flow === "BT";
+  const sortFn = isVertical
+    ? (a: { sortY: number; sortX: number }, b: { sortY: number; sortX: number }) => a.sortY - b.sortY || a.sortX - b.sortX
+    : (a: { sortY: number; sortX: number }, b: { sortY: number; sortX: number }) => a.sortX - b.sortX || a.sortY - b.sortY;
+
+  groupEntries.sort(sortFn);
+
+  // Format groups
+  for (const entry of groupEntries) {
+    const g = entry.group;
+    const b = g.bounds;
+    lines.push("");
+    lines.push(`  [${g.name}] ${entry.region} (${Math.round(b.x)},${Math.round(b.y)})-(${Math.round(b.x + b.width)},${Math.round(b.y + b.height)})`);
+
+    // Sort member shapes by position
+    const sorted = [...entry.shapes].sort((a, b2) =>
+      isVertical
+        ? a.bounds.y - b2.bounds.y || a.bounds.x - b2.bounds.x
+        : a.bounds.x - b2.bounds.x || a.bounds.y - b2.bounds.y
+    );
+
+    // Format members as pipe-separated rows
+    const memberStrs = sorted.map(
+      (s) => `${s.label}(${s.type}) @(${Math.round(s.bounds.x)},${Math.round(s.bounds.y)})`
+    );
+    // Group into rows of up to 3 for readability
+    for (let i = 0; i < memberStrs.length; i += 3) {
+      const row = memberStrs.slice(i, i + 3).join(" | ");
+      lines.push(`    ${row}`);
+    }
+  }
+
+  // Format ungrouped shapes
+  if (ungrouped.length > 0) {
+    const sortedUngrouped = [...ungrouped].sort((a, b2) =>
+      isVertical
+        ? a.bounds.y - b2.bounds.y || a.bounds.x - b2.bounds.x
+        : a.bounds.x - b2.bounds.x || a.bounds.y - b2.bounds.y
+    );
+
+    if (groupEntries.length > 0) lines.push("");
+    for (const s of sortedUngrouped) {
+      lines.push(`  ${s.label}(${s.type}) @(${Math.round(s.bounds.x)},${Math.round(s.bounds.y)}) — ungrouped`);
+    }
+  }
+
+  return lines.join("\n");
 }

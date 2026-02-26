@@ -4,7 +4,7 @@ import { tokenize, isKeyValue, parseKeyValue, isArrow, isSelector } from "./toke
 const VERBS = new Set<string>([
   "add", "remove", "define", "connect", "disconnect",
   "style", "label", "badge", "move", "resize", "swap",
-  "layout", "align", "distribute", "group", "ungroup",
+  "layout", "orient", "align", "distribute", "group", "ungroup",
   "layer", "page", "checkpoint", "title",
 ]);
 
@@ -66,6 +66,8 @@ export function parseOp(input: string): ParsedOp | { error: string; raw: string 
       return parseSimpleTarget("title", rest, raw);
     case "layout":
       return parseTargetWithParams("layout", rest, raw);
+    case "orient":
+      return parseSimpleTarget("orient", rest, raw);
     case "align":
       return parseTargetWithParams("align", rest, raw);
     case "distribute":

@@ -31,9 +31,15 @@ ARROWS: -> (directed), <-> (bidirectional), -- (undirected)
 ARROW HEADS: arrow, open-arrow, diamond, circle, crow-foot, none
 
 OPERATIONS: add, connect, style, move, resize, swap, label, badge,
-            group, ungroup, remove, layout, define, page, layer
+            group, ungroup, remove, layout, orient, define, page, layer
 
 LAYOUT: layout @all algo:layered|force|tree dir:TB|LR|BT|RL [spacing:N]
+ORIENT: orient TB|LR|BT|RL (sets page flow direction)
+MOVE: move REF to:X,Y | to:REGION | near:REF dir:DIR [strict:true]
+  Regions: top-left, top-center, top-right, middle-left, center,
+           middle-right, bottom-left, bottom-center, bottom-right
+  move @group:NAME to:REGION|X,Y (moves entire group)
+  Collision prevention ON by default, strict:true to disable
 
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME

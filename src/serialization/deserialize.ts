@@ -503,6 +503,13 @@ export function deserializeDiagram(xml: string): Diagram {
 
     const { shapes, edges, groups, layers, defaultLayer } = processCells(rawCells);
 
+    // Read flowDirection from diagram element if present
+    const rawFlowDir = diag["@_flowDirection"] as string | undefined;
+    const validFlowDirs = new Set(["TB", "LR", "BT", "RL"]);
+    const flowDirection = rawFlowDir && validFlowDirs.has(rawFlowDir)
+      ? (rawFlowDir as import("../types/index.js").FlowDirection)
+      : undefined;
+
     // Validate: remove edges referencing non-existent shapes
     for (const [edgeId, edge] of edges) {
       if (!shapes.has(edge.sourceId) || !shapes.has(edge.targetId)) {
@@ -527,6 +534,7 @@ export function deserializeDiagram(xml: string): Diagram {
       groups,
       layers,
       defaultLayer,
+      flowDirection,
     });
   }
 

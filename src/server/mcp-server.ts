@@ -48,7 +48,7 @@ ARROWS: -> (directed), <-> (bidirectional), -- (undirected)
 ARROW HEADS: arrow, open-arrow, diamond, circle, crow-foot, none
 
 OPERATIONS: add, connect, style, move, resize, swap, label, badge,
-            group, ungroup, remove, layout, define, page, layer
+            group, ungroup, remove, layout, orient, define, page, layer
 
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
@@ -94,10 +94,10 @@ Examples: 'add svc AuthService theme:blue', 'connect A -> B label:queries'`,
   // ── studio_query — read-only queries ────────────────────
   server.tool(
     "studio_query",
-    "Query diagram state. Returns shape lists, descriptions, stats, or connection info.",
+    "Query diagram state. Returns shape lists, descriptions, spatial map, stats, or connection info.",
     {
       q: z.string().describe(
-        "Query: 'list', 'list @type:db', 'describe AuthService', 'connections AuthService', 'stats', 'status', 'find Auth', 'diff checkpoint:v1', 'history 5'"
+        "Query: 'map' (spatial summary), 'list', 'list @type:db', 'describe AuthService', 'connections AuthService', 'stats', 'status', 'find Auth', 'diff checkpoint:v1', 'history 5'"
       ),
     },
     async ({ q }) => {

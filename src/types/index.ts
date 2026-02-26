@@ -43,6 +43,8 @@ export type Direction =
   | "below-left"
   | "below-right";
 
+export type FlowDirection = "TB" | "LR" | "BT" | "RL";
+
 export type ThemeName =
   | "blue"
   | "green"
@@ -163,6 +165,7 @@ export interface Page {
   groups: Map<string, Group>;
   layers: Layer[];
   defaultLayer: string;
+  flowDirection?: FlowDirection;
 }
 
 export interface DiagramMetadata {
@@ -226,6 +229,7 @@ export type Verb =
   | "resize"
   | "swap"
   | "layout"
+  | "orient"
   | "align"
   | "distribute"
   | "group"

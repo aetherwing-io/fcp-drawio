@@ -9,6 +9,7 @@ import { createDefaultStyle, createDefaultEdgeStyle } from "./defaults.js";
 import { ReferenceRegistry } from "./reference-registry.js";
 import { NODE_TYPES, inferTypeFromLabel, computeDefaultSize } from "../lib/node-types.js";
 import { THEMES, isThemeName } from "../lib/themes.js";
+import { boundsOverlap, computePushVector, isDownstream } from "./spatial.js";
 
 const DEFAULT_GAP = 60;
 const FIRST_SHAPE_POS = { x: 200, y: 200 };
@@ -397,7 +398,230 @@ export class DiagramModel {
     const page = this.getActivePage();
     const pageIdx = this.diagram.pages.findIndex(p => p.id === this.diagram.activePage) + 1;
     const totalPages = this.diagram.pages.length;
-    return `[${page.shapes.size}s ${page.edges.size}e ${page.groups.size}g p:${pageIdx}/${totalPages}]`;
+    const bounds = this.computeCanvasBounds();
+    const canvasStr = bounds ? `${Math.round(bounds.width)}x${Math.round(bounds.height)} ` : "";
+    return `[${page.shapes.size}s ${page.edges.size}e ${page.groups.size}g ${canvasStr}p:${pageIdx}/${totalPages}]`;
+  }
+
+  /** Compute the bounding box of all shapes and groups on the active page. */
+  computeCanvasBounds(): Bounds | null {
+    const page = this.getActivePage();
+    if (page.shapes.size === 0) return null;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    for (const shape of page.shapes.values()) {
+      minX = Math.min(minX, shape.bounds.x);
+      minY = Math.min(minY, shape.bounds.y);
+      maxX = Math.max(maxX, shape.bounds.x + shape.bounds.width);
+      maxY = Math.max(maxY, shape.bounds.y + shape.bounds.height);
+    }
+
+    for (const group of page.groups.values()) {
+      minX = Math.min(minX, group.bounds.x);
+      minY = Math.min(minY, group.bounds.y);
+      maxX = Math.max(maxX, group.bounds.x + group.bounds.width);
+      maxY = Math.max(maxY, group.bounds.y + group.bounds.height);
+    }
+
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  /**
+   * Resolve a named canvas region to absolute coordinates.
+   * Regions: top-left, top-center, top-right, middle-left, center, middle-right,
+   *          bottom-left, bottom-center, bottom-right
+   * Centers the entity of given size within the region.
+   */
+  resolveCanvasRegion(
+    region: string,
+    entitySize: { width: number; height: number },
+  ): Point | null {
+    const canvas = this.computeCanvasBounds();
+    if (!canvas) {
+      // No shapes yet — place in a default 800x600 canvas
+      return this.resolveRegionInBounds(
+        { x: 0, y: 0, width: 800, height: 600 },
+        region,
+        entitySize,
+      );
+    }
+
+    // Add margin around existing content
+    const margin = 60;
+    const expanded: Bounds = {
+      x: canvas.x - margin,
+      y: canvas.y - margin,
+      width: canvas.width + margin * 2,
+      height: canvas.height + margin * 2,
+    };
+
+    return this.resolveRegionInBounds(expanded, region, entitySize);
+  }
+
+  private resolveRegionInBounds(
+    bounds: Bounds,
+    region: string,
+    entitySize: { width: number; height: number },
+  ): Point | null {
+    const thirdW = bounds.width / 3;
+    const thirdH = bounds.height / 3;
+
+    let col: number; // 0=left, 1=center, 2=right
+    let row: number; // 0=top, 1=middle, 2=bottom
+
+    switch (region) {
+      case "top-left":      row = 0; col = 0; break;
+      case "top-center":    row = 0; col = 1; break;
+      case "top-right":     row = 0; col = 2; break;
+      case "middle-left":   row = 1; col = 0; break;
+      case "center":        row = 1; col = 1; break;
+      case "middle-right":  row = 1; col = 2; break;
+      case "bottom-left":   row = 2; col = 0; break;
+      case "bottom-center": row = 2; col = 1; break;
+      case "bottom-right":  row = 2; col = 2; break;
+      default: return null;
+    }
+
+    // Center entity within the region cell
+    const cellX = bounds.x + col * thirdW;
+    const cellY = bounds.y + row * thirdH;
+    return {
+      x: Math.round(cellX + (thirdW - entitySize.width) / 2),
+      y: Math.round(cellY + (thirdH - entitySize.height) / 2),
+    };
+  }
+
+  /** Public wrapper for recomputing group bounds. */
+  recomputeGroupBoundsPublic(groupId: string): void {
+    const page = this.getActivePage();
+    const group = page.groups.get(groupId);
+    if (group) this.recomputeGroupBounds(group, page);
+  }
+
+  /**
+   * Detect and resolve collisions after moving an entity.
+   * Pushes overlapping downstream items in the flow direction.
+   * Returns the number of items shifted.
+   */
+  detectAndResolveCollisions(
+    entityId: string,
+    isGroup: boolean,
+    maxDepth: number = 5,
+  ): number {
+    const page = this.getActivePage();
+    const flowDir = page.flowDirection ?? "TB";
+
+    // Get the bounds of the moved entity
+    let movedBounds: Bounds;
+    if (isGroup) {
+      const group = page.groups.get(entityId);
+      if (!group) return 0;
+      movedBounds = group.bounds;
+    } else {
+      const shape = page.shapes.get(entityId);
+      if (!shape) return 0;
+      movedBounds = shape.bounds;
+    }
+
+    // Collect spatial entities: ungrouped shapes + groups (as units)
+    interface SpatialEntity {
+      id: string;
+      bounds: Bounds;
+      isGroup: boolean;
+    }
+
+    const groupedShapeIds = new Set<string>();
+    for (const group of page.groups.values()) {
+      for (const id of group.memberIds) groupedShapeIds.add(id);
+    }
+
+    const entities: SpatialEntity[] = [];
+
+    // Add ungrouped shapes (excluding the moved entity)
+    for (const shape of page.shapes.values()) {
+      if (groupedShapeIds.has(shape.id)) continue;
+      if (!isGroup && shape.id === entityId) continue;
+      entities.push({ id: shape.id, bounds: shape.bounds, isGroup: false });
+    }
+
+    // Add groups (excluding the moved group)
+    for (const group of page.groups.values()) {
+      if (isGroup && group.id === entityId) continue;
+      entities.push({ id: group.id, bounds: group.bounds, isGroup: true });
+    }
+
+    // Ripple: push overlapping downstream entities
+    let totalShifted = 0;
+    const pushed = new Set<string>(); // track already-pushed IDs
+    let waveBounds = [movedBounds]; // bounds that may cause ripple
+
+    for (let depth = 0; depth < maxDepth && waveBounds.length > 0; depth++) {
+      const nextWave: Bounds[] = [];
+
+      for (const sourceBounds of waveBounds) {
+        for (const entity of entities) {
+          if (pushed.has(entity.id)) continue;
+          if (!isDownstream(sourceBounds, entity.bounds, flowDir)) continue;
+          if (!boundsOverlap(sourceBounds, entity.bounds)) continue;
+
+          const push = computePushVector(sourceBounds, entity.bounds, flowDir);
+          if (!push) continue;
+
+          // Apply push
+          if (entity.isGroup) {
+            this.pushGroup(entity.id, push.dx, push.dy);
+          } else {
+            this.pushShape(entity.id, push.dx, push.dy);
+          }
+
+          pushed.add(entity.id);
+          totalShifted++;
+
+          // Update entity bounds for future iterations
+          entity.bounds = {
+            ...entity.bounds,
+            x: entity.bounds.x + push.dx,
+            y: entity.bounds.y + push.dy,
+          };
+          nextWave.push(entity.bounds);
+        }
+      }
+
+      waveBounds = nextWave;
+    }
+
+    return totalShifted;
+  }
+
+  private pushShape(shapeId: string, dx: number, dy: number): void {
+    const page = this.getActivePage();
+    const shape = page.shapes.get(shapeId);
+    if (!shape) return;
+
+    const before = { bounds: { ...shape.bounds } };
+    shape.bounds = { ...shape.bounds, x: shape.bounds.x + dx, y: shape.bounds.y + dy };
+    shape.modifiedAt = nextSequence();
+    this.emit({
+      type: "shape_modified",
+      id: shapeId,
+      before,
+      after: { bounds: { ...shape.bounds } },
+    });
+  }
+
+  private pushGroup(groupId: string, dx: number, dy: number): void {
+    const page = this.getActivePage();
+    const group = page.groups.get(groupId);
+    if (!group) return;
+
+    // Move all member shapes
+    for (const memberId of group.memberIds) {
+      this.pushShape(memberId, dx, dy);
+    }
+
+    // Recompute group bounds
+    this.recomputeGroupBounds(group, page);
   }
 
   // ── Layout application ──────────────────────────────────────

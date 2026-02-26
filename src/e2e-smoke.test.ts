@@ -107,8 +107,8 @@ describe("E2E Smoke — full architecture diagram", async () => {
 
     // State digest format check
     const digest = intent.model.getDigest();
-    expect(digest).toMatch(/\[\d+s \d+e \d+g p:\d+\/\d+\]/);
-    expect(digest).toBe("[6s 5e 1g p:1/1]");
+    expect(digest).toMatch(/\[\d+s \d+e \d+g \d+x\d+ p:\d+\/\d+\]/);
+    expect(digest).toMatch(/\[6s 5e 1g \d+x\d+ p:1\/1\]/);
 
     // studio_session: save
     const filePath = tmpFile("payment-system.drawio");
@@ -210,17 +210,17 @@ describe("E2E Smoke — undo/redo", async () => {
       "add svc Delta theme:red",
     ]);
 
-    expect(intent.model.getDigest()).toBe("[4s 0e 0g p:1/1]");
+    expect(intent.model.getDigest()).toMatch(/\[4s 0e 0g \d+x\d+ p:1\/1\]/);
 
     // Undo to checkpoint
     const undoResult = intent.executeSession("undo to:v1");
     expect(undoResult).toContain("undone");
-    expect(intent.model.getDigest()).toBe("[2s 0e 0g p:1/1]");
+    expect(intent.model.getDigest()).toMatch(/\[2s 0e 0g \d+x\d+ p:1\/1\]/);
 
     // Redo
     intent.executeSession("redo");
     intent.executeSession("redo");
-    expect(intent.model.getDigest()).toBe("[4s 0e 0g p:1/1]");
+    expect(intent.model.getDigest()).toMatch(/\[4s 0e 0g \d+x\d+ p:1\/1\]/);
   });
 });
 
@@ -360,7 +360,7 @@ describe("E2E Smoke — edge variations", async () => {
     ]);
 
     expect(ops.every((r) => r.success)).toBe(true);
-    expect(intent.model.getDigest()).toBe("[3s 3e 0g p:1/1]");
+    expect(intent.model.getDigest()).toMatch(/\[3s 3e 0g \d+x\d+ p:1\/1\]/);
   });
 });
 
@@ -431,7 +431,7 @@ describe("E2E Smoke — stress", async () => {
     const connectResults = await intent.executeOps(connectOps);
     expect(connectResults.every((r) => r.success)).toBe(true);
 
-    expect(intent.model.getDigest()).toBe("[50s 49e 0g p:1/1]");
+    expect(intent.model.getDigest()).toMatch(/\[50s 49e 0g \d+x\d+ p:1\/1\]/);
 
     // Save and verify XML size is reasonable
     const filePath = tmpFile("stress.drawio");

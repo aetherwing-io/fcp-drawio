@@ -628,3 +628,25 @@ describe("round-trip — edge arrow types", () => {
     expect(restoredEdge.targetArrow).toBe("diamond");
   });
 });
+
+describe("round-trip — flowDirection", () => {
+  it("persists flowDirection through serialize/deserialize", () => {
+    model.addShape("A", "svc");
+    model.getActivePage().flowDirection = "LR";
+
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).toContain('flowDirection="LR"');
+
+    const restored = deserializeDiagram(xml);
+    expect(restored.pages[0].flowDirection).toBe("LR");
+  });
+
+  it("omits flowDirection when not set", () => {
+    model.addShape("A", "svc");
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).not.toContain("flowDirection");
+
+    const restored = deserializeDiagram(xml);
+    expect(restored.pages[0].flowDirection).toBeUndefined();
+  });
+});

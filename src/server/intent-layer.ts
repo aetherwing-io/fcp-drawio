@@ -13,7 +13,7 @@ import {
   formatShapeCreated, formatEdgeCreated, formatShapeModified,
   formatShapeDeleted, formatGroupCreated, formatStatus,
   formatList, formatConnections, formatDescribe, formatStats,
-  formatHistory,
+  formatHistory, formatMap,
 } from "./response-formatter.js";
 import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
 import { serializeDiagram } from "../serialization/serialize.js";
@@ -111,6 +111,7 @@ export class IntentLayer {
       case "page": return this.handlePage(op);
       case "layer": return this.handleLayer(op);
       case "layout": return this.handleLayout(op);
+      case "orient": return this.handleOrient(op);
       default:
         return { success: false, message: `Unhandled verb: ${op.verb}` };
     }
@@ -178,23 +179,30 @@ export class IntentLayer {
       }
     }
 
-    // Parse at:X,Y
-    let at: { x: number; y: number } | undefined;
-    const atParam = op.params.get("at");
-    if (atParam) {
-      const parts = atParam.split(",");
-      if (parts.length === 2) {
-        at = { x: parseFloat(parts[0]), y: parseFloat(parts[1]) };
-      }
-    }
-
-    // Parse size:WxH
+    // Parse size:WxH (before at: since region resolution needs size)
     let size: { width: number; height: number } | undefined;
     const sizeParam = op.params.get("size");
     if (sizeParam) {
       const parts = sizeParam.toLowerCase().split("x");
       if (parts.length === 2) {
         size = { width: parseFloat(parts[0]), height: parseFloat(parts[1]) };
+      }
+    }
+
+    // Parse at:X,Y or at:region-name
+    let at: { x: number; y: number } | undefined;
+    const atParam = op.params.get("at");
+    if (atParam) {
+      // Try region name first
+      const computedSize = size ?? computeDefaultSize(resolvedType, op.target ?? "Untitled");
+      const regionPos = this.model.resolveCanvasRegion(atParam, computedSize);
+      if (regionPos) {
+        at = regionPos;
+      } else {
+        const parts = atParam.split(",");
+        if (parts.length === 2) {
+          at = { x: parseFloat(parts[0]), y: parseFloat(parts[1]) };
+        }
       }
     }
 
@@ -577,6 +585,13 @@ export class IntentLayer {
       return { success: false, message: "move requires a target" };
     }
 
+    const strict = op.params.get("strict") === "true";
+
+    // Handle @group:Name — move entire group
+    if (op.target.startsWith("@group:")) {
+      return this.handleMoveGroup(op, strict);
+    }
+
     const resolved = resolveRef(op.target, this.model.registry, this.model);
     if (resolved.kind !== "single") {
       if (resolved.kind === "none") {
@@ -593,13 +608,22 @@ export class IntentLayer {
     let newX = shape.bounds.x;
     let newY = shape.bounds.y;
 
-    // to:X,Y
+    // to:X,Y or to:region-name
     const toParam = op.params.get("to");
     if (toParam) {
-      const parts = toParam.split(",");
-      if (parts.length === 2) {
-        newX = parseFloat(parts[0]);
-        newY = parseFloat(parts[1]);
+      const regionPos = this.model.resolveCanvasRegion(toParam, {
+        width: shape.bounds.width,
+        height: shape.bounds.height,
+      });
+      if (regionPos) {
+        newX = regionPos.x;
+        newY = regionPos.y;
+      } else {
+        const parts = toParam.split(",");
+        if (parts.length === 2) {
+          newX = parseFloat(parts[0]);
+          newY = parseFloat(parts[1]);
+        }
       }
     }
 
@@ -643,7 +667,79 @@ export class IntentLayer {
       return { success: false, message: `Failed to move ${op.target}` };
     }
 
-    return { success: true, message: `@moved ${result.label} to (${newX},${newY})` };
+    // Collision detection (unless strict mode)
+    let shifted = 0;
+    if (!strict) {
+      shifted = this.model.detectAndResolveCollisions(shape.id, false);
+    }
+
+    const shiftNote = shifted > 0 ? ` (shifted ${shifted} item${shifted !== 1 ? "s" : ""})` : "";
+    return { success: true, message: `@moved ${result.label} to (${newX},${newY})${shiftNote}` };
+  }
+
+  private handleMoveGroup(op: ParsedOp, strict: boolean): OpResult {
+    const groupName = op.target!.slice(7); // strip "@group:"
+    const group = this.model.getGroupByName(groupName);
+    if (!group) {
+      return { success: false, message: `Unknown group "${groupName}"` };
+    }
+
+    const toParam = op.params.get("to");
+    if (!toParam) {
+      return { success: false, message: "move @group requires to:X,Y or to:region" };
+    }
+
+    // Resolve target position for the group
+    let targetX: number;
+    let targetY: number;
+    const regionPos = this.model.resolveCanvasRegion(toParam, {
+      width: group.bounds.width,
+      height: group.bounds.height,
+    });
+    if (regionPos) {
+      targetX = regionPos.x;
+      targetY = regionPos.y;
+    } else {
+      const parts = toParam.split(",");
+      if (parts.length !== 2) {
+        return { success: false, message: `Invalid move target: ${toParam}` };
+      }
+      targetX = parseFloat(parts[0]);
+      targetY = parseFloat(parts[1]);
+    }
+
+    // Compute delta from current group bounds
+    const dx = targetX - group.bounds.x;
+    const dy = targetY - group.bounds.y;
+
+    const page = this.model.getActivePage();
+    let movedCount = 0;
+
+    // Move all member shapes by the delta
+    for (const memberId of group.memberIds) {
+      const shape = page.shapes.get(memberId);
+      if (shape) {
+        this.model.modifyShape(shape.id, {
+          bounds: { ...shape.bounds, x: shape.bounds.x + dx, y: shape.bounds.y + dy },
+        });
+        movedCount++;
+      }
+    }
+
+    // Recompute group bounds
+    this.model.recomputeGroupBoundsPublic(group.id);
+
+    // Collision detection for the group
+    let shifted = 0;
+    if (!strict) {
+      shifted = this.model.detectAndResolveCollisions(group.id, true);
+    }
+
+    const shiftNote = shifted > 0 ? ` (shifted ${shifted} item${shifted !== 1 ? "s" : ""})` : "";
+    return {
+      success: true,
+      message: `@moved group ${groupName} (${movedCount} shapes)${shiftNote}`,
+    };
   }
 
   // ── Resize ─────────────────────────────────────────────
@@ -956,6 +1052,9 @@ export class IntentLayer {
       const result = await runElkLayout(page, options);
       const count = this.model.applyLayout(result);
 
+      // Auto-set flow direction to match layout
+      page.flowDirection = dirParam as import("../types/index.js").FlowDirection;
+
       return {
         success: true,
         message: `@layout ${algoParam} ${dirParam} — repositioned ${count} shapes`,
@@ -966,6 +1065,24 @@ export class IntentLayer {
         message: `Layout failed: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+  }
+
+  // ── Orient ─────────────────────────────────────────────
+
+  private handleOrient(op: ParsedOp): OpResult {
+    if (!op.target) {
+      return { success: false, message: "orient requires a direction: TB, LR, BT, RL" };
+    }
+
+    const dir = op.target.toUpperCase();
+    const validDirs = new Set(["TB", "LR", "BT", "RL"]);
+    if (!validDirs.has(dir)) {
+      return { success: false, message: `Unknown direction "${op.target}". Use: TB, LR, BT, RL` };
+    }
+
+    const page = this.model.getActivePage();
+    page.flowDirection = dir as import("../types/index.js").FlowDirection;
+    return { success: true, message: `@orient ${dir}` };
   }
 
   // ── Query dispatch ─────────────────────────────────────
@@ -982,6 +1099,7 @@ export class IntentLayer {
       case "connections": return this.queryConnections(tokens.slice(1));
       case "stats": return formatStats(this.model);
       case "status": return formatStatus(this.model);
+      case "map": return formatMap(this.model);
       case "find": return this.queryFind(tokens.slice(1));
       case "diff": return this.queryDiff(tokens.slice(1));
       case "history": return this.queryHistory(tokens.slice(1));
@@ -1094,7 +1212,38 @@ export class IntentLayer {
           }
           this.model.rebuildRegistry();
           const page = this.model.getActivePage();
-          return `ok: opened "${filePath}" (${this.model.diagram.pages.length} pages, ${page.shapes.size} shapes, ${page.edges.size} edges, ${page.groups.size} groups)`;
+          const parts: string[] = [];
+          parts.push(`ok: opened "${filePath}" (${this.model.diagram.pages.length} pages, ${page.shapes.size} shapes, ${page.edges.size} edges, ${page.groups.size} groups)`);
+
+          // Canvas and flow info
+          const canvasBounds = this.model.computeCanvasBounds();
+          if (canvasBounds) {
+            const flowDir = page.flowDirection ?? "TB";
+            parts.push(`flow:${flowDir} canvas:${Math.round(canvasBounds.width)}x${Math.round(canvasBounds.height)}`);
+          }
+
+          // Group summary
+          if (page.groups.size > 0) {
+            const groupSummary = [...page.groups.values()]
+              .map((g) => `${g.name}(${g.memberIds.size})`)
+              .join(", ");
+            parts.push(`groups: ${groupSummary}`);
+          }
+
+          // Ungrouped shapes
+          const groupedIds = new Set<string>();
+          for (const g of page.groups.values()) {
+            for (const id of g.memberIds) groupedIds.add(id);
+          }
+          const ungroupedShapes = [...page.shapes.values()].filter((s) => !groupedIds.has(s.id));
+          if (ungroupedShapes.length > 0 && page.groups.size > 0) {
+            const ungroupedSummary = ungroupedShapes
+              .map((s) => `${s.label}(${s.type})`)
+              .join(", ");
+            parts.push(`ungrouped: ${ungroupedSummary}`);
+          }
+
+          return parts.join("\n");
         } catch (e: any) {
           return `error: ${e.message}`;
         }

@@ -368,6 +368,6 @@ describe("Integration — state digest", async () => {
     ]);
 
     const digest = intent.model.getDigest();
-    expect(digest).toBe("[2s 1e 0g p:1/1]");
+    expect(digest).toMatch(/\[2s 1e 0g \d+x\d+ p:1\/1\]/);
   });
 });

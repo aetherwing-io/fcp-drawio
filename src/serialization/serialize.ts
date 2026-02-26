@@ -14,7 +14,8 @@ function escapeXml(str: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/'/g, "&apos;")
+    .replace(/\n/g, "&#10;");
 }
 
 // ── Arrow type → draw.io style mapping ──────────────────────
@@ -95,7 +96,7 @@ export function buildEdgeStyleString(edge: Edge): string {
   if (style.curved) {
     parts.push("curved=1");
   } else {
-    parts.push("rounded=0");
+    parts.push("rounded=1");
   }
   parts.push("orthogonalLoop=1");
   parts.push("jettySize=auto");

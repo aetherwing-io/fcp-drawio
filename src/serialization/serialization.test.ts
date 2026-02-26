@@ -317,7 +317,7 @@ describe("buildShapeStyleString — theme colors appear in style", () => {
 // ── Edge style generation ───────────────────────────────────
 
 describe("buildEdgeStyleString — edge styles", () => {
-  it("generates default orthogonal edge style", () => {
+  it("generates default orthogonal edge style with rounded corners", () => {
     const s1 = model.addShape("A", "svc");
     const s2 = model.addShape("B", "svc");
     const edge = model.addEdge(s1.id, s2.id)!;
@@ -325,6 +325,8 @@ describe("buildEdgeStyleString — edge styles", () => {
     const styleStr = buildEdgeStyleString(edge);
 
     expect(styleStr).toContain("edgeStyle=orthogonalEdgeStyle");
+    expect(styleStr).toContain("rounded=1");
+    expect(styleStr).not.toContain("rounded=0");
     expect(styleStr).toContain("orthogonalLoop=1");
     expect(styleStr).toContain("jettySize=auto");
     expect(styleStr).toContain("html=1");
@@ -510,6 +512,14 @@ describe("serializeDiagram — XML escaping", () => {
 
     expect(xml).toContain("Auth &amp; User &lt;Service&gt;");
     expect(xml).not.toContain("Auth & User <Service>");
+  });
+
+  it("encodes newlines as &#10; in labels", () => {
+    model.addShape("Auth\nService", "svc");
+    const xml = serializeDiagram(model.diagram);
+
+    expect(xml).toContain("Auth&#10;Service");
+    expect(xml).not.toContain("Auth\nService");
   });
 });
 

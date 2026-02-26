@@ -420,6 +420,60 @@ export class IntentLayer {
       return { success: false, message: "style requires a target" };
     }
 
+    // Handle @group:NAME — style the group container, not members
+    if (op.target.startsWith("@group:")) {
+      const groupName = op.target.slice(7);
+      const group = this.model.getGroupByName(groupName);
+      if (!group) {
+        return { success: false, message: `Unknown group "${groupName}"` };
+      }
+
+      // Apply style params to group.style
+      for (const [key, value] of op.params) {
+        switch (key) {
+          case "fill": {
+            const color = resolveColor(value);
+            if (color) group.style.fillColor = color;
+            break;
+          }
+          case "stroke": {
+            const color = resolveColor(value);
+            if (color) group.style.strokeColor = color;
+            break;
+          }
+          case "font-color": {
+            const color = resolveColor(value);
+            if (color) group.style.fontColor = color;
+            break;
+          }
+          case "font-size":
+            group.style.fontSize = parseInt(value, 10);
+            break;
+          case "opacity":
+            group.style.opacity = parseInt(value, 10);
+            break;
+          case "rounded":
+            group.style.rounded = value === "true" || value === "1";
+            break;
+          case "dashed":
+            group.style.dashed = value === "true" || value === "1";
+            break;
+          case "shadow":
+            group.style.shadow = value === "true" || value === "1";
+            break;
+        }
+      }
+
+      const propList = [...op.params.entries()]
+        .map(([k, v]) => `${k}:${v}`)
+        .join(" ");
+
+      return {
+        success: true,
+        message: `*styled group ${groupName} ${propList}`,
+      };
+    }
+
     const resolved = resolveRef(op.target, this.model.registry, this.model);
     if (resolved.kind === "none") {
       const suggestion = resolved.suggestedLabel

@@ -968,3 +968,38 @@ describe("IntentLayer — collision prevention", () => {
     expect(shapeA.bounds.y).toBe(100); // A unchanged
   });
 });
+
+// ── Style @group: targets container, not members ────────────
+
+describe("IntentLayer — style @group: targets container", () => {
+  it("applies fill to group container, not member shapes", async () => {
+    await layer.executeOps([
+      "add svc Auth theme:blue",
+      "add svc Users theme:blue",
+      "group Auth Users as:Backend",
+    ]);
+
+    const page = layer.model.getActivePage();
+    const authBefore = [...page.shapes.values()].find((s) => s.label === "Auth")!;
+    const originalFill = authBefore.style.fillColor;
+
+    const results = await layer.executeOps(["style @group:Backend fill:#dae8fc stroke:#6c8ebf"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("group Backend");
+
+    // Group container should have the new fill
+    const group = layer.model.getGroupByName("Backend")!;
+    expect(group.style.fillColor).toBe("#dae8fc");
+    expect(group.style.strokeColor).toBe("#6c8ebf");
+
+    // Member shapes should be unchanged
+    const authAfter = [...page.shapes.values()].find((s) => s.label === "Auth")!;
+    expect(authAfter.style.fillColor).toBe(originalFill);
+  });
+
+  it("returns error for unknown group", async () => {
+    const results = await layer.executeOps(["style @group:NonExistent fill:#fff"]);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("Unknown group");
+  });
+});

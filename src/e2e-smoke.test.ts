@@ -317,7 +317,7 @@ describe("E2E Smoke — selectors", async () => {
 
     const ops = await intent.executeOps(["style @group:CoreAPI fill:#bbdefb"]);
     expect(ops[0].success).toBe(true);
-    expect(ops[0].message).toContain("2");
+    expect(ops[0].message).toContain("group CoreAPI");
   });
 
   it("@recent selects last created shape", async () => {

@@ -484,7 +484,9 @@ export class DiagramModel {
   // ── Group bounds ─────────────────────────────────────────
 
   private recomputeGroupBounds(group: Group, page: Page): void {
-    const padding = 20;
+    const paddingX = 40;
+    const paddingBottom = 35;
+    const paddingTop = 50; // room for bold group label
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     for (const id of group.memberIds) {
@@ -497,11 +499,16 @@ export class DiagramModel {
     }
 
     if (minX !== Infinity) {
+      let width = maxX - minX + paddingX * 2;
+      // Ensure minimum width so group label isn't truncated (~8px per char)
+      const minLabelWidth = group.name.length * 9 + paddingX * 2;
+      width = Math.max(width, minLabelWidth);
+
       group.bounds = {
-        x: minX - padding,
-        y: minY - padding,
-        width: maxX - minX + padding * 2,
-        height: maxY - minY + padding * 2,
+        x: minX - paddingX,
+        y: minY - paddingTop,
+        width,
+        height: maxY - minY + paddingTop + paddingBottom,
       };
     }
   }

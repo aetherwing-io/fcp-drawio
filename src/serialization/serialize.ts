@@ -177,7 +177,8 @@ function serializePage(page: Page): string {
 
   // Foundation cells
   cells.push(`      <mxCell id="0"/>`);
-  cells.push(`      <mxCell id="1" parent="0"/>`);
+  // Default layer — use the model's actual defaultLayer ID so child cells can reference it
+  cells.push(`      <mxCell id="${escapeXml(page.defaultLayer)}" parent="0"/>`);
 
   // Additional layers (beyond default)
   for (const layer of page.layers) {
@@ -202,9 +203,21 @@ function serializePage(page: Page): string {
     const styleStr = buildShapeStyleString(shape);
     const b = shape.bounds;
     const parent = shape.parentGroup ?? shape.layer;
+
+    // If parented to a group, convert absolute coords to container-relative
+    let x = b.x;
+    let y = b.y;
+    if (shape.parentGroup) {
+      const group = page.groups.get(shape.parentGroup);
+      if (group) {
+        x = b.x - group.bounds.x;
+        y = b.y - group.bounds.y;
+      }
+    }
+
     cells.push(
       `      <mxCell id="${escapeXml(shape.id)}" value="${escapeXml(shape.label)}" style="${escapeXml(styleStr)}" vertex="1" parent="${escapeXml(parent)}">\n` +
-      `        <mxGeometry x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" as="geometry"/>\n` +
+      `        <mxGeometry x="${x}" y="${y}" width="${b.width}" height="${b.height}" as="geometry"/>\n` +
       `      </mxCell>`
     );
   }
@@ -262,6 +275,9 @@ function buildGroupStyleString(group: Group): string {
   parts.push("whiteSpace=wrap");
   parts.push("html=1");
   parts.push("container=1");
+  parts.push("verticalAlign=top");
+  parts.push("fontStyle=1");
+  parts.push("swimlaneLine=0");
 
   const style = group.style;
   if (style.fillColor) parts.push(`fillColor=${style.fillColor}`);

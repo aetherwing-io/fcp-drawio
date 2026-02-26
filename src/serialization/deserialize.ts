@@ -345,6 +345,15 @@ function processCells(cells: RawCell[]): {
         groups.get(parentGroup)!.memberIds.add(id);
       }
 
+      // Convert container-relative coords back to absolute for the model
+      if (parentGroup) {
+        const group = groups.get(parentGroup);
+        if (group) {
+          bounds.x += group.bounds.x;
+          bounds.y += group.bounds.y;
+        }
+      }
+
       shapes.set(id, {
         id,
         label: cell["@_value"] || "",

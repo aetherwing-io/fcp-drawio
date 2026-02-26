@@ -31,9 +31,9 @@ describe("serializeDiagram — basic structure", () => {
     expect(xml).toContain("<mxGraphModel");
     expect(xml).toContain("<root>");
 
-    // Foundation cells
+    // Foundation cells — default layer uses the model's actual layer ID
     expect(xml).toContain('<mxCell id="0"/>');
-    expect(xml).toContain('<mxCell id="1" parent="0"/>');
+    expect(xml).toMatch(/<mxCell id="[^"]*" parent="0"\/>/);  // default layer cell
 
     // Shape cells
     expect(xml).toContain(`id="${s1.id}"`);

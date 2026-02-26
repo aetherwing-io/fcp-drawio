@@ -39,6 +39,9 @@ export function computeAllEdgeRenderInfo(
   // Phase 2: Fan-out spreading — distribute ports when multiple edges share same source+face
   applyFanOutSpreading(result, edges, page);
 
+  // Phase 3: Label x-offset spreading — spread labeled edges so labels don't cluster at midpoints
+  applyLabelOffsetSpreading(result, edges);
+
   return result;
 }
 
@@ -73,13 +76,18 @@ export function computeEdgeRenderInfo(
     };
   }
 
-  // Compute smart ports based on relative positions
-  const ports = computeSmartPorts(source, target);
+  // Compute smart ports — use cross-group hint if shapes are in different groups
+  const crossGroup = source.parentGroup !== target.parentGroup;
+  const ports = crossGroup
+    ? computeCrossGroupPorts(source, target, page)
+    : computeSmartPorts(source, target);
+
+  const exitFace = angleFace(computeAngle(source.bounds, target.bounds));
 
   return {
     ports,
-    exitFace: ports ? angleFace(computeAngle(source.bounds, target.bounds)) : null,
-    entryFace: ports ? mirrorFace(angleFace(computeAngle(source.bounds, target.bounds))) : null,
+    exitFace,
+    entryFace: mirrorFace(exitFace),
     labelOffsetX: 0,
     labelOffsetY: 0,
   };
@@ -138,6 +146,52 @@ export function computeSmartPorts(source: Shape, target: Shape): PortAssignment 
   const exit = faceToPort(face, fineOffset);
   const entryFace = mirrorFace(face);
   const entry = faceToPort(entryFace, fineOffset);
+
+  return {
+    exitX: exit.x,
+    exitY: exit.y,
+    entryX: entry.x,
+    entryY: entry.y,
+  };
+}
+
+/**
+ * Compute port assignments for edges crossing group boundaries.
+ * When source and target are in different groups (or one is ungrouped),
+ * compute the angle toward the target's group bounding box edge (not target center directly).
+ * This biases the exit port toward the group boundary.
+ */
+function computeCrossGroupPorts(source: Shape, target: Shape, page: Page): PortAssignment {
+  // If target is in a group, use the nearest edge of the group bounding box
+  // as the angle target instead of the target shape center directly
+  let targetBounds = target.bounds;
+  if (target.parentGroup) {
+    const group = page.groups.get(target.parentGroup);
+    if (group) {
+      targetBounds = group.bounds;
+    }
+  }
+
+  // Compute angle from source center to target group boundary
+  const angleDeg = computeAngle(source.bounds, targetBounds);
+  const face = angleFace(angleDeg);
+  const fineOffset = computeFineOffset(angleDeg, face);
+
+  const exit = faceToPort(face, fineOffset);
+
+  // For entry, compute from target's perspective toward source (or source's group)
+  let sourceBounds = source.bounds;
+  if (source.parentGroup) {
+    const group = page.groups.get(source.parentGroup);
+    if (group) {
+      sourceBounds = group.bounds;
+    }
+  }
+
+  const entryAngleDeg = computeAngle(target.bounds, sourceBounds);
+  const entryFace = angleFace(entryAngleDeg);
+  const entryFineOffset = computeFineOffset(entryAngleDeg, entryFace);
+  const entry = faceToPort(entryFace, entryFineOffset);
 
   return {
     exitX: exit.x,
@@ -301,6 +355,49 @@ function spreadEntryPorts(
       info.ports.entryX = pos;
     } else {
       info.ports.entryY = pos;
+    }
+  }
+}
+
+// ── Label x-offset spreading ─────────────────────────────────
+
+/**
+ * Spread label x-offsets for labeled edges sharing the same source shape,
+ * so labels don't all cluster at the midpoint.
+ *
+ * For N labeled edges from same source:
+ *   N=1 → x=0 (centered)
+ *   N=2 → x at -0.15, +0.15
+ *   N=3 → x at -0.3, 0, +0.3
+ *   General: x = -0.3 + (i * 0.6) / (N - 1)
+ */
+function applyLabelOffsetSpreading(
+  infos: Map<string, EdgeRenderInfo>,
+  edges: Edge[],
+): void {
+  // Group labeled edges by source shape
+  const labelGroups = new Map<string, { edge: Edge; info: EdgeRenderInfo }[]>();
+
+  for (const edge of edges) {
+    if (!edge.label) continue;
+    const info = infos.get(edge.id);
+    if (!info) continue;
+
+    const key = edge.sourceId;
+    if (!labelGroups.has(key)) labelGroups.set(key, []);
+    labelGroups.get(key)!.push({ edge, info });
+  }
+
+  for (const [, group] of labelGroups) {
+    const n = group.length;
+    if (n <= 1) continue;
+
+    // Sort by target ID for deterministic ordering
+    group.sort((a, b) => a.edge.targetId.localeCompare(b.edge.targetId));
+
+    for (let i = 0; i < n; i++) {
+      const x = -0.3 + (i * 0.6) / (n - 1);
+      group[i].info.labelOffsetX = Math.round(x * 100) / 100;
     }
   }
 }

@@ -321,6 +321,134 @@ describe("computeAllEdgeRenderInfo — fan-out spreading", () => {
   });
 });
 
+// ── Cross-group routing hints ───────────────────────────────
+
+describe("computeAllEdgeRenderInfo — cross-group routing", () => {
+  it("shape in group → shape outside group: exit faces group boundary", () => {
+    // Shape inside a group on the left, external shape far to the right
+    const s1 = model.addShape("Internal", "svc", { at: { x: 100, y: 200 } });
+    const s2 = model.addShape("External", "svc", { at: { x: 600, y: 200 } });
+
+    // Create group containing s1
+    model.createGroup("MyGroup", [s1.id]);
+
+    const edge = model.addEdge(s1.id, s2.id)!;
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+    const info = infos.get(edge.id)!;
+
+    // Internal → External (right direction): exit should be on right face
+    expect(info.ports!.exitX).toBe(1.0);
+  });
+
+  it("shapes in different groups separated horizontally: edges exit right/left", () => {
+    const s1 = model.addShape("LeftShape", "svc", { at: { x: 100, y: 200 } });
+    const s2 = model.addShape("RightShape", "svc", { at: { x: 600, y: 200 } });
+
+    model.createGroup("LeftGroup", [s1.id]);
+    model.createGroup("RightGroup", [s2.id]);
+
+    const edge = model.addEdge(s1.id, s2.id)!;
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+    const info = infos.get(edge.id)!;
+
+    // Left→Right: exit right, enter left
+    expect(info.ports!.exitX).toBe(1.0);
+    expect(info.ports!.entryX).toBe(0.0);
+  });
+
+  it("shapes in same group: no cross-group adjustment (standard smart ports)", () => {
+    const s1 = model.addShape("A", "svc", { at: { x: 100, y: 200 } });
+    const s2 = model.addShape("B", "svc", { at: { x: 400, y: 200 } });
+
+    model.createGroup("SameGroup", [s1.id, s2.id]);
+
+    const edge = model.addEdge(s1.id, s2.id)!;
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+    const info = infos.get(edge.id)!;
+
+    // Standard smart ports, both in same group
+    expect(info.ports!.exitX).toBe(1.0);
+    expect(info.ports!.entryX).toBe(0.0);
+  });
+});
+
+// ── Label x-offset spreading ────────────────────────────────
+
+describe("computeAllEdgeRenderInfo — label offset spreading", () => {
+  it("single labeled edge → x=0", () => {
+    const s1 = model.addShape("A", "svc", { at: { x: 100, y: 100 } });
+    const s2 = model.addShape("B", "svc", { at: { x: 100, y: 300 } });
+    model.addEdge(s1.id, s2.id, { label: "only-one" });
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+
+    const info = [...infos.values()][0];
+    expect(info.labelOffsetX).toBe(0);
+  });
+
+  it("2 labeled edges from same source → x at -0.15, +0.15 (approx -0.3, +0.3)", () => {
+    const src = model.addShape("Hub", "svc", { at: { x: 200, y: 50 } });
+    const t1 = model.addShape("T1", "svc", { at: { x: 100, y: 300 } });
+    const t2 = model.addShape("T2", "svc", { at: { x: 300, y: 300 } });
+
+    const e1 = model.addEdge(src.id, t1.id, { label: "alpha" })!;
+    const e2 = model.addEdge(src.id, t2.id, { label: "beta" })!;
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+
+    const offsets = [infos.get(e1.id)!.labelOffsetX, infos.get(e2.id)!.labelOffsetX].sort((a, b) => a - b);
+    expect(offsets[0]).toBeCloseTo(-0.3, 2);
+    expect(offsets[1]).toBeCloseTo(0.3, 2);
+  });
+
+  it("3 labeled edges from same source → x at -0.3, 0, +0.3", () => {
+    const src = model.addShape("Hub", "svc", { at: { x: 200, y: 50 } });
+    const t1 = model.addShape("T1", "svc", { at: { x: 50, y: 300 } });
+    const t2 = model.addShape("T2", "svc", { at: { x: 200, y: 300 } });
+    const t3 = model.addShape("T3", "svc", { at: { x: 350, y: 300 } });
+
+    const e1 = model.addEdge(src.id, t1.id, { label: "one" })!;
+    const e2 = model.addEdge(src.id, t2.id, { label: "two" })!;
+    const e3 = model.addEdge(src.id, t3.id, { label: "three" })!;
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+
+    const offsets = [
+      infos.get(e1.id)!.labelOffsetX,
+      infos.get(e2.id)!.labelOffsetX,
+      infos.get(e3.id)!.labelOffsetX,
+    ].sort((a, b) => a - b);
+
+    expect(offsets[0]).toBeCloseTo(-0.3, 2);
+    expect(offsets[1]).toBeCloseTo(0, 2);
+    expect(offsets[2]).toBeCloseTo(0.3, 2);
+  });
+
+  it("unlabeled edges excluded from label grouping", () => {
+    const src = model.addShape("Hub", "svc", { at: { x: 200, y: 50 } });
+    const t1 = model.addShape("T1", "svc", { at: { x: 100, y: 300 } });
+    const t2 = model.addShape("T2", "svc", { at: { x: 300, y: 300 } });
+
+    const e1 = model.addEdge(src.id, t1.id, { label: "labeled" })!;
+    model.addEdge(src.id, t2.id)!; // no label
+
+    const page = model.getActivePage();
+    const infos = computeAllEdgeRenderInfo(page);
+
+    // Only one labeled edge → no spreading, x=0
+    expect(infos.get(e1.id)!.labelOffsetX).toBe(0);
+  });
+});
+
 // ── Integration: serializer with smart ports ────────────────
 
 describe("serialize — smart port integration", () => {

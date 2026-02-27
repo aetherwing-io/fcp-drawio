@@ -1,9 +1,17 @@
 {
-  "name": "fcp-drawio",
+  "name": "@aetherwing/fcp-drawio",
   "version": "0.2.0",
   "description": "A Domain Brain MCP tool for creating and editing draw.io diagrams through intent-level commands",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -24,5 +32,8 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/aetherwing-io/fcp-drawio" },
+  "keywords": ["drawio", "diagrams", "architecture", "mcp", "fcp"]
 }

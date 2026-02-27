@@ -1,5 +1,5 @@
 {
-  "name": "fcp-drawio",
+  "name": "@aetherwing/fcp-drawio",
   "description": "MCP server for creating and editing draw.io diagrams through intent-level commands",
   "version": "0.2.0",
   "license": "MIT",

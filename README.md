@@ -62,7 +62,7 @@ Apply color themes to any shape: `blue`, `green`, `red`, `orange`, `purple`, `ye
 Requires Node >= 18.
 
 ```bash
-npm install fcp-drawio
+npm install @aetherwing/fcp-drawio
 ```
 
 ### MCP Client Configuration
@@ -72,7 +72,7 @@ npm install fcp-drawio
   "mcpServers": {
     "drawio": {
       "command": "node",
-      "args": ["node_modules/fcp-drawio/dist/index.js"]
+      "args": ["node_modules/@aetherwing/fcp-drawio/dist/index.js"]
     }
   }
 }

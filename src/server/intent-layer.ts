@@ -26,10 +26,12 @@ export class IntentLayer {
   private sessionHandler: SessionHandler;
   /** O(1) lookup for loaded stencil entries by their short ID (e.g., "lambda", "s3"). */
   loadedStencilEntries: Map<string, StencilEntry> = new Map();
+  readonly drawioCliPath: string | null;
 
-  constructor() {
+  constructor(options?: { drawioCliPath?: string | null }) {
     this.model = new DiagramModel();
-    this.queryHandler = new QueryHandler(this.model);
+    this.drawioCliPath = options?.drawioCliPath ?? null;
+    this.queryHandler = new QueryHandler(this.model, this.drawioCliPath);
     this.sessionHandler = new SessionHandler(this.model);
   }
 

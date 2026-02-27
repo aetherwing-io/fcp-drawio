@@ -1,12 +1,14 @@
 import type { Shape } from "../types/index.js";
 import type { SnapshotResult } from "../lib/drawio-cli.js";
+import { renderSnapshot } from "../lib/drawio-cli.js";
 import { DiagramModel } from "../model/diagram-model.js";
 import { resolveRef } from "../parser/resolve-ref.js";
-import { tokenize } from "../parser/tokenizer.js";
+import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
 import {
   formatList, formatConnections, formatDescribe, formatStats,
   formatStatus, formatHistory, formatMap,
 } from "./response-formatter.js";
+import { serializeDiagram } from "../serialization/serialize.js";
 
 export interface QueryResult {
   text: string;
@@ -36,6 +38,7 @@ export class QueryHandler {
       case "find": return this.queryFind(tokens.slice(1));
       case "diff": return this.queryDiff(tokens.slice(1));
       case "history": return this.queryHistory(tokens.slice(1));
+      case "snapshot": return this.querySnapshot(tokens.slice(1));
       default: return `Unknown query command "${cmd}"`;
     }
   }
@@ -117,5 +120,45 @@ export class QueryHandler {
     const count = args.length > 0 ? parseInt(args[0], 10) : 10;
     const events = this.model.getHistory(isNaN(count) ? 10 : count);
     return formatHistory(events);
+  }
+
+  private querySnapshot(args: string[]): string | Promise<QueryResult> {
+    const page = this.model.getActivePage();
+    if (page.shapes.size === 0) {
+      return "snapshot: empty diagram — add shapes first";
+    }
+
+    if (!this.drawioCliPath) {
+      return "snapshot unavailable: draw.io desktop app not found. Install from https://drawio.com for visual review. Use 'map' query for text-based spatial summary.";
+    }
+
+    let width = 1200;
+    let pageNum = 1;
+    for (const arg of args) {
+      if (isKeyValue(arg)) {
+        const { key, value } = parseKeyValue(arg);
+        if (key === "width") width = parseInt(value, 10) || 1200;
+        if (key === "page") pageNum = parseInt(value, 10) || 1;
+      }
+    }
+
+    const xml = serializeDiagram(this.model.diagram);
+
+    return renderSnapshot({
+      cliPath: this.drawioCliPath,
+      diagramXml: xml,
+      width,
+      page: pageNum,
+    }).then((image) => {
+      const pageCount = this.model.diagram.pages.length;
+      const shapeCount = page.shapes.size;
+      const edgeCount = page.edges.size;
+      const groupCount = page.groups.size;
+      const sizeKB = Math.round(image.sizeBytes / 1024);
+      return {
+        text: `snapshot: ${image.width}px ${sizeKB}KB [${shapeCount}s ${edgeCount}e ${groupCount}g p:${pageNum}/${pageCount}]`,
+        image,
+      } as QueryResult;
+    });
   }
 }

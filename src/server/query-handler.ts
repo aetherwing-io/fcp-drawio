@@ -123,15 +123,7 @@ export class QueryHandler {
   }
 
   private querySnapshot(args: string[]): string | Promise<QueryResult> {
-    const page = this.model.getActivePage();
-    if (page.shapes.size === 0) {
-      return "snapshot: empty diagram — add shapes first";
-    }
-
-    if (!this.drawioCliPath) {
-      return "snapshot unavailable: draw.io desktop app not found. Install from https://drawio.com for visual review. Use 'map' query for text-based spatial summary.";
-    }
-
+    // Parse arguments first so we know which page is being requested
     let width = 1200;
     let pageNum = 1;
     for (const arg of args) {
@@ -142,6 +134,21 @@ export class QueryHandler {
       }
     }
 
+    // Validate page number and get the requested page
+    const pages = this.model.diagram.pages;
+    if (pageNum < 1 || pageNum > pages.length) {
+      return `snapshot: invalid page ${pageNum} — diagram has ${pages.length} page(s)`;
+    }
+    const requestedPage = pages[pageNum - 1];
+
+    if (requestedPage.shapes.size === 0) {
+      return "snapshot: empty diagram — add shapes first";
+    }
+
+    if (!this.drawioCliPath) {
+      return "snapshot unavailable: draw.io desktop app not found. Install from https://drawio.com for visual review. Use 'map' query for text-based spatial summary.";
+    }
+
     const xml = serializeDiagram(this.model.diagram);
 
     return renderSnapshot({
@@ -150,10 +157,10 @@ export class QueryHandler {
       width,
       page: pageNum,
     }).then((image) => {
-      const pageCount = this.model.diagram.pages.length;
-      const shapeCount = page.shapes.size;
-      const edgeCount = page.edges.size;
-      const groupCount = page.groups.size;
+      const pageCount = pages.length;
+      const shapeCount = requestedPage.shapes.size;
+      const edgeCount = requestedPage.edges.size;
+      const groupCount = requestedPage.groups.size;
       const sizeKB = Math.round(image.sizeBytes / 1024);
       return {
         text: `snapshot: ${image.width}px ${sizeKB}KB [${shapeCount}s ${edgeCount}e ${groupCount}g p:${pageNum}/${pageCount}]`,

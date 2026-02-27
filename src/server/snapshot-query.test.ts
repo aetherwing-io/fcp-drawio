@@ -72,3 +72,64 @@ describe("model-map snapshot advertising", () => {
     expect(help).not.toContain("SNAPSHOT:");
   });
 });
+
+describe("snapshot multi-page", () => {
+  it("returns empty error when requested page has no shapes (not active page)", async () => {
+    const intent = new IntentLayer({ drawioCliPath: null });
+    // Add shapes to page 1, then add empty page 2
+    await intent.executeOps(["add svc Foo"]);
+    await intent.executeOps(["page add \"Page2\""]);
+    // Switch back to page 1 so active page has shapes
+    await intent.executeOps(["page switch \"Page-1\""]);
+    // Request snapshot of page 2 (empty) — should get empty error
+    const result = intent.executeQuery("snapshot page:2");
+    expect(typeof result).toBe("string");
+    expect(result as string).toContain("empty");
+  });
+
+  it("does NOT return empty error when active page is empty but requested page has shapes", async () => {
+    const intent = new IntentLayer({ drawioCliPath: null });
+    // Add shapes to page 1
+    await intent.executeOps(["add svc Foo"]);
+    // Add page 2 (which becomes active and is empty)
+    await intent.executeOps(["page add \"Page2\""]);
+    // Active page (Page2) is empty, but we request page 1 which has shapes
+    // Should NOT get empty error — should get CLI not found instead
+    const result = intent.executeQuery("snapshot page:1");
+    expect(typeof result).toBe("string");
+    expect(result as string).toContain("not found");
+  });
+
+  it("returns error for out-of-range page number", async () => {
+    const intent = new IntentLayer({ drawioCliPath: null });
+    await intent.executeOps(["add svc Foo"]);
+    const result = intent.executeQuery("snapshot page:5");
+    expect(typeof result).toBe("string");
+    expect(result as string).toContain("invalid page 5");
+  });
+
+  it.skipIf(!cliPath)("snapshot page:2 renders the second page", async () => {
+    const intent = new IntentLayer({ drawioCliPath: cliPath });
+    // Page 1: one shape
+    await intent.executeOps(["add svc Foo"]);
+    // Page 2: different shapes
+    await intent.executeOps(["page add \"Page2\""]);
+    await intent.executeOps(["add db Bar", "add api Baz"]);
+
+    // Snapshot page 1
+    const r1 = await intent.executeQuery("snapshot page:1");
+    expect(typeof r1).toBe("object");
+    const qr1 = r1 as { text: string; image?: { base64: string } };
+    expect(qr1.text).toContain("p:1/2");
+    expect(qr1.text).toContain("1s"); // 1 shape on page 1
+
+    // Snapshot page 2
+    const r2 = await intent.executeQuery("snapshot page:2");
+    expect(typeof r2).toBe("object");
+    const qr2 = r2 as { text: string; image?: { base64: string } };
+    expect(qr2.text).toContain("p:2/2");
+    expect(qr2.text).toContain("2s"); // 2 shapes on page 2
+    expect(qr2.image).toBeDefined();
+    expect(qr2.image!.base64.length).toBeGreaterThan(100);
+  }, 20_000);
+});

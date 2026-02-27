@@ -7,6 +7,7 @@ import type {
 } from "../types/index.js";
 import { NODE_TYPES } from "../lib/node-types.js";
 import { createDefaultStyle, createDefaultEdgeStyle } from "../model/defaults.js";
+import { getStencilPrefixes } from "../lib/stencils/index.js";
 
 // ── XML parser configuration ────────────────────────────────
 
@@ -68,15 +69,18 @@ function buildStyleSet(styleMap: Record<string, string>): StyleSet {
   if (styleMap["dashed"] === "1") style.dashed = true;
   if (styleMap["shadow"] === "1") style.shadow = true;
   if (styleMap["opacity"]) style.opacity = parseInt(styleMap["opacity"], 10);
+  if (styleMap["align"]) style.align = styleMap["align"];
+  if (styleMap["verticalAlign"]) style.verticalAlign = styleMap["verticalAlign"];
 
   // Preserve unknown properties in the extensible bucket
   const knownKeys = new Set([
     "fillColor", "strokeColor", "fontColor", "fontSize", "fontFamily",
-    "fontStyle", "rounded", "dashed", "shadow", "opacity",
+    "fontStyle", "rounded", "dashed", "shadow", "opacity", "align", "verticalAlign",
     // draw.io structural keys that are part of the base style, not extensible
+    "dashPattern",
     "whiteSpace", "html", "aspect", "boundedLbl", "backgroundOutline",
     "size", "perimeter", "fixedSize", "container", "connectable",
-    "collapsed", "verticalAlign", "align",
+    "collapsed",
   ]);
   for (const [key, value] of Object.entries(styleMap)) {
     if (!knownKeys.has(key) && !isBaseStyleToken(key)) {
@@ -97,6 +101,7 @@ function buildEdgeStyleSet(styleMap: Record<string, string>): EdgeStyleSet {
     edgeStyle: styleMap["edgeStyle"] || "orthogonalEdgeStyle",
     curved: styleMap["curved"] === "1",
     flowAnimation: styleMap["flowAnimation"] === "1",
+    dotted: styleMap["dashed"] === "1" && styleMap["dashPattern"] !== undefined,
   };
 
   // Copy strokeWidth as extensible if present
@@ -354,6 +359,19 @@ function processCells(cells: RawCell[]): {
         }
       }
 
+      // Detect stencil style: if the raw style contains a known stencil prefix,
+      // preserve the full style string as baseStyleOverride for round-trip fidelity
+      let baseStyleOverride: string | undefined;
+      if (styleStr) {
+        const stencilPrefixes = getStencilPrefixes();
+        for (const [prefix] of stencilPrefixes) {
+          if (styleStr.includes(prefix)) {
+            baseStyleOverride = styleStr;
+            break;
+          }
+        }
+      }
+
       shapes.set(id, {
         id,
         label: cell["@_value"] || "",
@@ -363,6 +381,7 @@ function processCells(cells: RawCell[]): {
         parentGroup,
         layer: layer || defaultLayer,
         metadata: {},
+        baseStyleOverride,
         createdAt: seq,
         modifiedAt: seq++,
       });
@@ -433,26 +452,31 @@ export function deserializeDiagram(xml: string): Diagram {
   }
 
   const metadata: DiagramMetadata = {
-    host: mxfile["@_host"] || "drawio-mcp-studio",
+    host: mxfile["@_host"] || "fcp-drawio",
     modified: mxfile["@_modified"] || new Date().toISOString(),
     version: mxfile["@_version"] || "0.2.0",
   };
 
-  // Extract studio-meta (custom types/themes)
+  // Extract fcp-meta (custom types/themes/stencil packs)
+  // Falls back to studio-meta for backward compatibility with older files
   let customTypes = new Map<string, CustomType>();
   let customThemes = new Map<string, CustomTheme>();
-  const studioMetaRaw = mxfile["@_studio-meta"];
-  if (studioMetaRaw) {
+  let loadedStencilPacks = new Set<string>();
+  const fcpMetaRaw = mxfile["@_fcp-meta"] ?? mxfile["@_studio-meta"];
+  if (fcpMetaRaw) {
     try {
-      const studioMeta = JSON.parse(studioMetaRaw);
-      if (studioMeta.customTypes) {
-        customTypes = new Map(Object.entries(studioMeta.customTypes) as [string, CustomType][]);
+      const fcpMeta = JSON.parse(fcpMetaRaw);
+      if (fcpMeta.customTypes) {
+        customTypes = new Map(Object.entries(fcpMeta.customTypes) as [string, CustomType][]);
       }
-      if (studioMeta.customThemes) {
-        customThemes = new Map(Object.entries(studioMeta.customThemes) as [string, CustomTheme][]);
+      if (fcpMeta.customThemes) {
+        customThemes = new Map(Object.entries(fcpMeta.customThemes) as [string, CustomTheme][]);
+      }
+      if (Array.isArray(fcpMeta.loadedStencilPacks)) {
+        loadedStencilPacks = new Set(fcpMeta.loadedStencilPacks as string[]);
       }
     } catch {
-      // Silently ignore malformed studio-meta
+      // Silently ignore malformed fcp-meta
     }
   }
 
@@ -564,6 +588,7 @@ export function deserializeDiagram(xml: string): Diagram {
     activePage: pages[0]?.id || "",
     customTypes,
     customThemes,
+    loadedStencilPacks,
     metadata,
   };
 }

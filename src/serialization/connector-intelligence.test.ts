@@ -168,6 +168,29 @@ describe("computeEdgeRenderInfo — deserialized port preservation", () => {
     expect(info.ports!.exitX).toBe(0.5);
     expect(info.ports!.exitY).toBe(1.0);
   });
+
+  it("preserves numeric port hints including zero values (e.g. exit:top → exitY=0)", () => {
+    const s1 = model.addShape("A", "svc", { at: { x: 100, y: 100 } });
+    const s2 = model.addShape("B", "svc", { at: { x: 400, y: 400 } });
+    const edge = model.addEdge(s1.id, s2.id)!;
+
+    // Simulate port hints set as numbers (from intent layer), including 0 values
+    (edge.style as Record<string, unknown>)["exitX"] = 0.5;
+    (edge.style as Record<string, unknown>)["exitY"] = 0;
+    (edge.style as Record<string, unknown>)["entryX"] = 0.5;
+    (edge.style as Record<string, unknown>)["entryY"] = 1;
+
+    const page = model.getActivePage();
+    const info = computeEdgeRenderInfo(edge, page);
+
+    // Smart ports would compute different values (diagonal down-right),
+    // but explicit ports must be preserved
+    expect(info.ports).not.toBeNull();
+    expect(info.ports!.exitX).toBe(0.5);
+    expect(info.ports!.exitY).toBe(0);
+    expect(info.ports!.entryX).toBe(0.5);
+    expect(info.ports!.entryY).toBe(1);
+  });
 });
 
 // ── computeEdgeRenderInfo — edge cases ──────────────────────

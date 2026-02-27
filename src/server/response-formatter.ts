@@ -32,7 +32,8 @@ export function formatShapeCreated(shape: Shape): string {
 export function formatEdgeCreated(edge: Edge, sourceLabel: string, targetLabel: string): string {
   const parts = [`~${sourceLabel}->${targetLabel}`];
   if (edge.label) parts.push(`"${edge.label}"`);
-  if (edge.style.dashed) parts.push("dashed");
+  if (edge.style.dotted) parts.push("dotted");
+  else if (edge.style.dashed) parts.push("dashed");
   if (edge.style.curved) parts.push("curved");
   if (edge.style.flowAnimation) parts.push("animated");
   return parts.join(" ");
@@ -71,8 +72,8 @@ export function formatStatus(model: DiagramModel): string {
   const shapeCount = page.shapes.size;
   const edgeCount = page.edges.size;
   const groupCount = page.groups.size;
-  const opCount = model.eventLog.events.length;
-  const checkpointCount = model.eventLog.checkpoints.size;
+  const opCount = model.eventLog.length;
+  const checkpointCount = model.eventLog.checkpointCount;
   const savedState = d.filePath ? `saved: ${d.filePath}` : "unsaved";
 
   const lines: string[] = [];
@@ -107,7 +108,7 @@ export function formatStatus(model: DiagramModel): string {
   // Checkpoints
   if (checkpointCount > 0) {
     const cpEntries: string[] = [];
-    for (const [name, idx] of model.eventLog.checkpoints) {
+    for (const [name, idx] of model.eventLog.getCheckpoints()) {
       cpEntries.push(`"${name}" @op:${idx}`);
     }
     lines.push(`  checkpoints: ${cpEntries.join(", ")}`);

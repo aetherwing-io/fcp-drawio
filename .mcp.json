@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fcp-drawio": {
+      "command": "node",
+      "args": [
+        "dist/index.js"
+      ],
+      "cwd": "."
+    }
+  }
+}

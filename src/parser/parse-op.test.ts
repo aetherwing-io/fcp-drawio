@@ -29,6 +29,26 @@ describe("tokenize", () => {
   it("handles multiple spaces", () => {
     expect(tokenize("add   svc   A")).toEqual(["add", "svc", "A"]);
   });
+
+  it("converts literal \\n to newline in unquoted tokens", () => {
+    const result = tokenize("add svc Container\\nRegistry");
+    expect(result).toEqual(["add", "svc", "Container\nRegistry"]);
+  });
+
+  it("converts literal \\n to newline in quoted strings", () => {
+    const result = tokenize('add svc "Container\\nRegistry"');
+    expect(result).toEqual(["add", "svc", "Container\nRegistry"]);
+  });
+
+  it("converts literal \\n to newline in embedded quoted values", () => {
+    const result = tokenize('label:"Line1\\nLine2"');
+    expect(result).toEqual(["label:Line1\nLine2"]);
+  });
+
+  it("converts multiple \\n sequences", () => {
+    const result = tokenize("add svc A\\nB\\nC");
+    expect(result).toEqual(["add", "svc", "A\nB\nC"]);
+  });
 });
 
 describe("isKeyValue", () => {
@@ -217,6 +237,52 @@ describe("parseOp — style", () => {
   });
 });
 
+describe("parseOp — style bare flags", () => {
+  it("captures bold as bare flag param", () => {
+    const op = parseOp("style Title bold");
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("style");
+      expect(op.target).toBe("Title");
+      expect(op.params.get("bold")).toBe("true");
+    }
+  });
+
+  it("captures multiple bare flags", () => {
+    const op = parseOp("style Title bold italic underline");
+    if (!isParseError(op)) {
+      expect(op.params.get("bold")).toBe("true");
+      expect(op.params.get("italic")).toBe("true");
+      expect(op.params.get("underline")).toBe("true");
+    }
+  });
+
+  it("captures no-bold negation flag", () => {
+    const op = parseOp("style Title no-bold");
+    if (!isParseError(op)) {
+      expect(op.params.get("no-bold")).toBe("true");
+    }
+  });
+
+  it("mixes bare flags with key:value params", () => {
+    const op = parseOp("style Title bold fontSize:24 italic font-family:Helvetica");
+    if (!isParseError(op)) {
+      expect(op.target).toBe("Title");
+      expect(op.params.get("bold")).toBe("true");
+      expect(op.params.get("italic")).toBe("true");
+      expect(op.params.get("fontSize")).toBe("24");
+      expect(op.params.get("font-family")).toBe("Helvetica");
+    }
+  });
+
+  it("captures align and valign as key:value", () => {
+    const op = parseOp("style Title align:left valign:top");
+    if (!isParseError(op)) {
+      expect(op.params.get("align")).toBe("left");
+      expect(op.params.get("valign")).toBe("top");
+    }
+  });
+});
+
 // ── Parser: other verbs ───────────────────────────────────
 
 describe("parseOp — remove", () => {
@@ -237,6 +303,21 @@ describe("parseOp — label", () => {
       expect(op.target).toBe("Gateway");
       expect(op.params.get("text")).toBe("API Gateway v2");
     }
+  });
+
+  it("parses edge label with arrow syntax", () => {
+    const op = parseOp('label Auth -> DB "read/write"');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("label");
+      expect(op.targets).toEqual(["Auth", "DB"]);
+      expect(op.arrows).toEqual(["->"]);
+      expect(op.params.get("text")).toBe("read/write");
+    }
+  });
+
+  it("returns error for edge label missing text", () => {
+    const op = parseOp("label Auth -> DB");
+    expect(isParseError(op)).toBe(true);
   });
 });
 

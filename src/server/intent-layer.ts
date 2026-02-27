@@ -103,7 +103,7 @@ export class IntentLayer {
 
   // ── Single op execution ────────────────────────────────
 
-  private async executeSingleOp(opStr: string): Promise<OpResult> {
+  async executeSingleOp(opStr: string): Promise<OpResult> {
     const parsed = parseOp(opStr);
     if (isParseError(parsed)) {
       return { success: false, message: parsed.error };

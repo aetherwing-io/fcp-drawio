@@ -12,6 +12,8 @@ export function createDefaultStyle(): StyleSet {
     dashed: false,
     shadow: false,
     opacity: 100,
+    align: null,
+    verticalAlign: null,
   };
 }
 
@@ -21,5 +23,6 @@ export function createDefaultEdgeStyle(): EdgeStyleSet {
     edgeStyle: "orthogonalEdgeStyle",
     curved: false,
     flowAnimation: false,
+    dotted: false,
   };
 }

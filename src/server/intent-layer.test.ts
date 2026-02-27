@@ -26,6 +26,15 @@ describe("IntentLayer — add", async () => {
     expect(shape.type).toBe("svc");
   });
 
+  it("uses label: modifier to override display name", async () => {
+    const results = await layer.executeOps(['add svc AuthService label:"HTTP Server"']);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.label).toBe("HTTP Server");
+  });
+
   it("infers type from label when no type given", async () => {
     const results = await layer.executeOps(["add UserDB"]);
     expect(results[0].success).toBe(true);
@@ -127,6 +136,80 @@ describe("IntentLayer — connect", async () => {
     expect(results[0].success).toBe(false);
     expect(results[0].message).toContain("NonExistent");
   });
+
+  it("creates dotted edge distinct from dashed", async () => {
+    await layer.executeOps(["connect AuthService -> UserDB style:dotted"]);
+    await layer.executeOps(["connect AuthService -> TokenCache style:dashed"]);
+
+    const page = layer.model.getActivePage();
+    const edges = [...page.edges.values()];
+
+    const dotted = edges.find(e => e.style.dotted);
+    const dashed = edges.find(e => e.style.dashed && !e.style.dotted);
+
+    expect(dotted).toBeDefined();
+    expect(dotted!.style.dashed).toBe(true);
+    expect(dotted!.style.dotted).toBe(true);
+
+    expect(dashed).toBeDefined();
+    expect(dashed!.style.dashed).toBe(true);
+    expect(dashed!.style.dotted).toBe(false);
+  });
+
+  it("reports dotted in response message", async () => {
+    const results = await layer.executeOps(["connect AuthService -> UserDB style:dotted"]);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("dotted");
+    expect(results[0].message).not.toContain("dashed");
+  });
+});
+
+describe("IntentLayer — connect port hints", async () => {
+  beforeEach(async () => {
+    await layer.executeOps([
+      "add svc A at:100,100",
+      "add svc B at:400,400",
+    ]);
+  });
+
+  it("stores exit:bottom entry:top as port coordinates on edge style", async () => {
+    const results = await layer.executeOps(["connect A -> B exit:bottom entry:top"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const edge = [...page.edges.values()][0];
+    const style = edge.style as Record<string, unknown>;
+    expect(style["exitX"]).toBe(0.5);
+    expect(style["exitY"]).toBe(1);
+    expect(style["entryX"]).toBe(0.5);
+    expect(style["entryY"]).toBe(0);
+  });
+
+  it("stores exit:left entry:right as port coordinates on edge style", async () => {
+    const results = await layer.executeOps(["connect A -> B exit:left entry:right"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const edge = [...page.edges.values()][0];
+    const style = edge.style as Record<string, unknown>;
+    expect(style["exitX"]).toBe(0);
+    expect(style["exitY"]).toBe(0.5);
+    expect(style["entryX"]).toBe(1);
+    expect(style["entryY"]).toBe(0.5);
+  });
+
+  it("edges without port hints have no explicit port coordinates", async () => {
+    const results = await layer.executeOps(["connect A -> B"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const edge = [...page.edges.values()][0];
+    const style = edge.style as Record<string, unknown>;
+    expect(style["exitX"]).toBeUndefined();
+    expect(style["exitY"]).toBeUndefined();
+    expect(style["entryX"]).toBeUndefined();
+    expect(style["entryY"]).toBeUndefined();
+  });
 });
 
 describe("IntentLayer — style", async () => {
@@ -185,6 +268,43 @@ describe("IntentLayer — group", async () => {
 
     const group = layer.model.getGroupByName("Backend");
     expect(group).toBeUndefined();
+  });
+
+  it("applies label: param as display name with underscore-to-space conversion", async () => {
+    const results = await layer.executeOps([
+      "group AuthService UserDB as:CP label:Control_Plane",
+    ]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const group = [...page.groups.values()].find((g) => g.name === "Control Plane");
+    expect(group).toBeDefined();
+    expect(group!.name).toBe("Control Plane");
+  });
+
+  it("applies theme: param to group style", async () => {
+    const results = await layer.executeOps([
+      "group AuthService UserDB as:Backend theme:green",
+    ]);
+    expect(results[0].success).toBe(true);
+
+    const group = layer.model.getGroupByName("Backend");
+    expect(group).toBeDefined();
+    expect(group!.style.fillColor).toBe("#d5e8d4");
+    expect(group!.style.strokeColor).toBe("#82b366");
+  });
+
+  it("applies theme: with fontColor for dark theme on group", async () => {
+    const results = await layer.executeOps([
+      "group AuthService UserDB as:Backend theme:dark",
+    ]);
+    expect(results[0].success).toBe(true);
+
+    const group = layer.model.getGroupByName("Backend");
+    expect(group).toBeDefined();
+    expect(group!.style.fillColor).toBe("#1a1a2e");
+    expect(group!.style.strokeColor).toBe("#16213e");
+    expect(group!.style.fontColor).toBe("#e0e0e0");
   });
 });
 
@@ -412,6 +532,24 @@ describe("IntentLayer — label and badge", async () => {
     expect(results[0].success).toBe(true);
     const shape = [...layer.model.getActivePage().shapes.values()][0];
     expect(shape.label).toBe("Auth Gateway");
+  });
+
+  it("relabels an edge via arrow syntax", async () => {
+    await layer.executeOps(["add svc Gateway"]);
+    await layer.executeOps(['connect AuthService -> Gateway label:queries']);
+    const results = await layer.executeOps(['label AuthService -> Gateway "read/write"']);
+    expect(results[0].success).toBe(true);
+    expect(results[0].message).toContain("read/write");
+
+    const edge = [...layer.model.getActivePage().edges.values()][0];
+    expect(edge.label).toBe("read/write");
+  });
+
+  it("returns error when relabeling nonexistent edge", async () => {
+    await layer.executeOps(["add svc Gateway"]);
+    const results = await layer.executeOps(['label AuthService -> Gateway "text"']);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("No edge");
   });
 
   it("adds a badge to a shape", async () => {
@@ -970,6 +1108,119 @@ describe("IntentLayer — collision prevention", () => {
 });
 
 // ── Style @group: targets container, not members ────────────
+
+describe("IntentLayer — style text formatting", () => {
+  beforeEach(async () => {
+    await layer.executeOps(["add svc Title theme:blue"]);
+  });
+
+  it("bold flag sets fontStyle bit 1", async () => {
+    const results = await layer.executeOps(["style Title bold"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(1);
+  });
+
+  it("italic flag sets fontStyle bit 2", async () => {
+    const results = await layer.executeOps(["style Title italic"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(2);
+  });
+
+  it("underline flag sets fontStyle bit 4", async () => {
+    const results = await layer.executeOps(["style Title underline"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(4);
+  });
+
+  it("bold italic combined sets fontStyle to 3", async () => {
+    const results = await layer.executeOps(["style Title bold italic"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(3);
+  });
+
+  it("no-bold clears bit 1 without affecting others", async () => {
+    // First set bold+italic (3)
+    await layer.executeOps(["style Title bold italic"]);
+    // Then clear bold
+    const results = await layer.executeOps(["style Title no-bold"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(2); // only italic remains
+  });
+
+  it("no-italic clears bit 2 without affecting others", async () => {
+    await layer.executeOps(["style Title bold italic underline"]);
+    const results = await layer.executeOps(["style Title no-italic"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontStyle).toBe(5); // bold + underline
+  });
+
+  it("font-family:Helvetica sets fontFamily", async () => {
+    const results = await layer.executeOps(["style Title font-family:Helvetica"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fontFamily).toBe("Helvetica");
+  });
+
+  it("align:left sets align", async () => {
+    const results = await layer.executeOps(["style Title align:left"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.align).toBe("left");
+  });
+
+  it("valign:top sets verticalAlign", async () => {
+    const results = await layer.executeOps(["style Title valign:top"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.verticalAlign).toBe("top");
+  });
+
+  it("combines text styling with fill and fontSize", async () => {
+    const results = await layer.executeOps([
+      "style Title fill:#1E293B font:#FFF bold fontSize:24 align:center",
+    ]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.style.fillColor).toBe("#1E293B");
+    expect(shape.style.fontColor).toBe("#FFF");
+    expect(shape.style.fontStyle).toBe(1);
+    expect(shape.style.fontSize).toBe(24);
+    expect(shape.style.align).toBe("center");
+  });
+
+  it("response message shows bare flags without :true", async () => {
+    const results = await layer.executeOps(["style Title bold italic"]);
+    expect(results[0].message).toContain("bold");
+    expect(results[0].message).toContain("italic");
+    expect(results[0].message).not.toContain(":true");
+  });
+});
 
 describe("IntentLayer — style @group: targets container", () => {
   it("applies fill to group container, not member shapes", async () => {

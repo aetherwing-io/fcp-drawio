@@ -23,7 +23,7 @@ describe("serializeDiagram — basic structure", () => {
     const xml = serializeDiagram(model.diagram);
 
     // mxfile wrapper
-    expect(xml).toContain('<mxfile host="drawio-mcp-studio"');
+    expect(xml).toContain('<mxfile host="fcp-drawio"');
     expect(xml).toContain('version="0.2.0"');
 
     // Page wrapper
@@ -147,8 +147,38 @@ describe("round-trip: serialize → deserialize", () => {
     const xml = serializeDiagram(model.diagram);
     const restored = deserializeDiagram(xml);
 
-    expect(restored.metadata.host).toBe("drawio-mcp-studio");
+    expect(restored.metadata.host).toBe("fcp-drawio");
     expect(restored.metadata.version).toBe("0.2.0");
+  });
+
+  it("preserves fontStyle bitmask through round-trip", () => {
+    const shape = model.addShape("Title", "svc");
+    model.modifyShape(shape.id, {
+      style: { ...shape.style, fontStyle: 3, fontFamily: "Helvetica" },
+    });
+
+    const xml = serializeDiagram(model.diagram);
+    const restored = deserializeDiagram(xml);
+    const page = restored.pages[0];
+    const restoredShape = page.shapes.get(shape.id)!;
+
+    expect(restoredShape.style.fontStyle).toBe(3); // bold + italic
+    expect(restoredShape.style.fontFamily).toBe("Helvetica");
+  });
+
+  it("preserves align and verticalAlign through round-trip", () => {
+    const shape = model.addShape("Title", "svc");
+    model.modifyShape(shape.id, {
+      style: { ...shape.style, align: "left", verticalAlign: "top" },
+    });
+
+    const xml = serializeDiagram(model.diagram);
+    const restored = deserializeDiagram(xml);
+    const page = restored.pages[0];
+    const restoredShape = page.shapes.get(shape.id)!;
+
+    expect(restoredShape.style.align).toBe("left");
+    expect(restoredShape.style.verticalAlign).toBe("top");
   });
 });
 
@@ -156,7 +186,7 @@ describe("round-trip: serialize → deserialize", () => {
 
 describe("deserializeDiagram — uncompressed XML", () => {
   it("parses a hand-crafted uncompressed XML", () => {
-    const xml = `<mxfile host="drawio-mcp-studio" modified="2026-02-25T00:00:00Z" version="0.2.0">
+    const xml = `<mxfile host="fcp-drawio" modified="2026-02-25T00:00:00Z" version="0.2.0">
   <diagram id="page1" name="System Overview">
     <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1">
     <root>
@@ -339,6 +369,26 @@ describe("buildEdgeStyleString — edge styles", () => {
 
     const styleStr = buildEdgeStyleString(edge);
     expect(styleStr).toContain("dashed=1");
+  });
+
+  it("includes dashPattern=1 3 for dotted edges", () => {
+    const s1 = model.addShape("A", "svc");
+    const s2 = model.addShape("B", "svc");
+    const edge = model.addEdge(s1.id, s2.id, { style: { dashed: true, dotted: true } })!;
+
+    const styleStr = buildEdgeStyleString(edge);
+    expect(styleStr).toContain("dashed=1");
+    expect(styleStr).toContain("dashPattern=1 3");
+  });
+
+  it("does NOT include dashPattern for plain dashed edges", () => {
+    const s1 = model.addShape("A", "svc");
+    const s2 = model.addShape("B", "svc");
+    const edge = model.addEdge(s1.id, s2.id, { style: { dashed: true } })!;
+
+    const styleStr = buildEdgeStyleString(edge);
+    expect(styleStr).toContain("dashed=1");
+    expect(styleStr).not.toContain("dashPattern");
   });
 
   it("generates open-arrow endArrow style", () => {
@@ -667,7 +717,7 @@ describe("round-trip — custom types and themes", () => {
     model.addShape("A", "svc");
 
     const xml = serializeDiagram(model.diagram);
-    expect(xml).toContain("studio-meta");
+    expect(xml).toContain("fcp-meta");
     expect(xml).toContain("payment-svc");
 
     const restored = deserializeDiagram(xml);
@@ -683,7 +733,7 @@ describe("round-trip — custom types and themes", () => {
     model.addShape("A", "svc");
 
     const xml = serializeDiagram(model.diagram);
-    expect(xml).toContain("studio-meta");
+    expect(xml).toContain("fcp-meta");
 
     const restored = deserializeDiagram(xml);
     expect(restored.customThemes.size).toBe(1);
@@ -693,10 +743,10 @@ describe("round-trip — custom types and themes", () => {
     expect(theme.fontColor).toBe("#660000");
   });
 
-  it("omits studio-meta when no custom types or themes", () => {
+  it("omits fcp-meta when no custom types or themes", () => {
     model.addShape("A", "svc");
     const xml = serializeDiagram(model.diagram);
-    expect(xml).not.toContain("studio-meta");
+    expect(xml).not.toContain("fcp-meta");
   });
 
   it("handles both custom types and themes together", () => {

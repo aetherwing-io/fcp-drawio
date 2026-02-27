@@ -5,7 +5,7 @@ const VERBS = new Set<string>([
   "add", "remove", "define", "connect", "disconnect",
   "style", "label", "badge", "move", "resize", "swap",
   "layout", "orient", "group", "ungroup",
-  "layer", "page", "checkpoint", "title",
+  "layer", "page", "checkpoint", "title", "load",
 ]);
 
 /**
@@ -68,6 +68,8 @@ export function parseOp(input: string): ParsedOp | { error: string; raw: string 
       return parseTargetWithParams("layout", rest, raw);
     case "orient":
       return parseSimpleTarget("orient", rest, raw);
+    case "load":
+      return parseSimpleTarget("load", rest, raw);
     default:
       return { error: `unhandled verb "${verb}"`, raw };
   }
@@ -219,6 +221,7 @@ function parseDisconnect(tokens: string[], raw: string): ParsedOp | { error: str
 
 /**
  * label REF "new text"
+ * label SRC -> TGT "new text"
  */
 function parseLabel(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 2) {
@@ -227,21 +230,40 @@ function parseLabel(tokens: string[], raw: string): ParsedOp | { error: string; 
 
   const params = new Map<string, string>();
   const nonParams: string[] = [];
+  const arrows: ArrowOperator[] = [];
 
   for (const token of tokens) {
     if (isKeyValue(token)) {
       const { key, value } = parseKeyValue(token);
       params.set(key, value);
+    } else if (isArrow(token)) {
+      arrows.push(token as ArrowOperator);
     } else {
       nonParams.push(token);
     }
   }
 
+  // Edge form: label A -> B "text"
+  if (arrows.length > 0) {
+    if (nonParams.length < 3) {
+      return { error: 'label edge requires: label SRC -> TGT "text"', raw };
+    }
+    params.set("text", nonParams[2]);
+    return {
+      verb: "label",
+      raw,
+      target: nonParams[0],
+      targets: [nonParams[0], nonParams[1]],
+      arrows,
+      params,
+    };
+  }
+
+  // Shape form: label REF "text"
   if (nonParams.length < 2) {
     return { error: "label requires REF and text", raw };
   }
 
-  // Target is first non-param, text is second
   params.set("text", nonParams[1]);
 
   return {
@@ -359,6 +381,9 @@ function parseTargetWithParams(verb: Verb, tokens: string[], raw: string): Parse
       selector = token;
     } else if (!target) {
       target = token;
+    } else {
+      // Bare token after target — treat as boolean flag (e.g., bold, italic, no-bold)
+      params.set(token, "true");
     }
   }
 

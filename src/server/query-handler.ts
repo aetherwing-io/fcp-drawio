@@ -104,16 +104,15 @@ export class QueryHandler {
       cpName = param;
     }
 
-    const cpIndex = this.model.eventLog.checkpoints.get(cpName);
+    const cpIndex = this.model.eventLog.getCheckpointIndex(cpName);
     if (cpIndex === undefined) {
       return `Unknown checkpoint "${cpName}"`;
     }
 
-    const events = this.model.eventLog.events.slice(cpIndex);
-    const nonCheckpoint = events.filter((e) => e.type !== "checkpoint");
-    if (nonCheckpoint.length === 0) return `No changes since checkpoint "${cpName}"`;
+    const events = this.model.eventLog.eventsSince(cpIndex);
+    if (events.length === 0) return `No changes since checkpoint "${cpName}"`;
 
-    return `${nonCheckpoint.length} changes since "${cpName}":\n` + formatHistory(nonCheckpoint);
+    return `${events.length} changes since "${cpName}":\n` + formatHistory(events);
   }
 
   private queryHistory(args: string[]): string {

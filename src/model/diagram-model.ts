@@ -1,9 +1,9 @@
 import type {
   Diagram, Page, Shape, Edge, Group, Layer, Bounds, Point,
   StyleSet, EdgeStyleSet, ShapeType, ArrowType, ThemeName,
-  DiagramEvent, EventLog, CustomType, CustomTheme, Badge, FlowDirection,
+  DiagramEvent, CustomType, CustomTheme, Badge, FlowDirection,
 } from "../types/index.js";
-import { createEventLog, appendEvent, createCheckpoint, getUndoEvents, undoToCheckpoint, getRedoEvents, getRecentEvents, canUndo, canRedo } from "./event-log.js";
+import { EventLog } from "@aetherwing/fcp-core";
 import { nextShapeId, nextEdgeId, nextGroupId, nextPageId, nextLayerId, nextSequence } from "./id.js";
 import { createDefaultStyle, createDefaultEdgeStyle } from "./defaults.js";
 import { ReferenceRegistry } from "./reference-registry.js";
@@ -16,11 +16,11 @@ const FIRST_SHAPE_POS = { x: 200, y: 200 };
 
 export class DiagramModel {
   diagram: Diagram;
-  eventLog: EventLog;
+  eventLog: EventLog<DiagramEvent>;
   registry: ReferenceRegistry;
 
   constructor() {
-    this.eventLog = createEventLog();
+    this.eventLog = new EventLog<DiagramEvent>();
     this.registry = new ReferenceRegistry();
     this.diagram = this.createEmptyDiagram("Untitled");
   }
@@ -29,7 +29,7 @@ export class DiagramModel {
 
   createNew(title: string): void {
     this.diagram = this.createEmptyDiagram(title);
-    this.eventLog = createEventLog();
+    this.eventLog = new EventLog<DiagramEvent>();
     this.rebuildRegistry();
   }
 
@@ -53,8 +53,9 @@ export class DiagramModel {
       activePage: pageId,
       customTypes: new Map(),
       customThemes: new Map(),
+      loadedStencilPacks: new Set(),
       metadata: {
-        host: "drawio-mcp-studio",
+        host: "fcp-drawio",
         modified: new Date().toISOString(),
         version: "0.2.0",
       },
@@ -124,6 +125,8 @@ export class DiagramModel {
       at?: Point;
       inGroup?: string;   // group ID
       size?: { width: number; height: number };
+      baseStyleOverride?: string;   // full draw.io style from stencil
+      skipDefaultTheme?: boolean;   // skip default "blue" theme (stencil colors)
     } = {},
   ): Shape {
     const page = this.getActivePage();
@@ -135,8 +138,9 @@ export class DiagramModel {
     // Compute position
     const position = this.computePosition(page, options, computedSize);
 
-    // Build style
-    const style = this.buildShapeStyle(type, options.theme);
+    // Build style — skip default theme if stencil provides its own colors
+    const effectiveTheme = options.skipDefaultTheme ? undefined : options.theme;
+    const style = this.buildShapeStyle(type, effectiveTheme, options.skipDefaultTheme);
 
     const shape: Shape = {
       id: nextShapeId(),
@@ -147,6 +151,7 @@ export class DiagramModel {
       parentGroup: options.inGroup ?? null,
       layer: page.defaultLayer,
       metadata: {},
+      baseStyleOverride: options.baseStyleOverride,
       createdAt: now,
       modifiedAt: now,
     };
@@ -265,6 +270,27 @@ export class DiagramModel {
     page.edges.delete(id);
     this.emit({ type: "edge_deleted", edge });
     this.rebuildRegistry();
+    return edge;
+  }
+
+  modifyEdge(id: string, changes: Partial<Pick<Edge, "label" | "style" | "sourceArrow" | "targetArrow">>): Edge | null {
+    const page = this.getActivePage();
+    const edge = page.edges.get(id);
+    if (!edge) return null;
+
+    const before: Partial<Edge> = {};
+    const after: Partial<Edge> = {};
+
+    for (const [key, value] of Object.entries(changes)) {
+      if (value !== undefined) {
+        (before as any)[key] = (edge as any)[key];
+        (after as any)[key] = value;
+        (edge as any)[key] = value;
+      }
+    }
+
+    edge.modifiedAt = nextSequence();
+    this.emit({ type: "edge_modified", id, before, after });
     return edge;
   }
 
@@ -410,11 +436,11 @@ export class DiagramModel {
   // ── Checkpoints and undo ─────────────────────────────────
 
   checkpoint(name: string): void {
-    createCheckpoint(this.eventLog, name);
+    this.eventLog.checkpoint(name);
   }
 
   undo(count: number = 1): DiagramEvent[] {
-    const events = getUndoEvents(this.eventLog, count);
+    const events = this.eventLog.undo(count);
     for (const event of events) {
       this.reverseEvent(event);
     }
@@ -423,7 +449,7 @@ export class DiagramModel {
   }
 
   undoTo(checkpointName: string): DiagramEvent[] | null {
-    const events = undoToCheckpoint(this.eventLog, checkpointName);
+    const events = this.eventLog.undoTo(checkpointName);
     if (!events) return null;
     for (const event of events) {
       this.reverseEvent(event);
@@ -433,7 +459,7 @@ export class DiagramModel {
   }
 
   redo(count: number = 1): DiagramEvent[] {
-    const events = getRedoEvents(this.eventLog, count);
+    const events = this.eventLog.redo(count);
     for (const event of events) {
       this.replayEvent(event);
     }
@@ -442,15 +468,15 @@ export class DiagramModel {
   }
 
   getHistory(count: number): DiagramEvent[] {
-    return getRecentEvents(this.eventLog, count);
+    return this.eventLog.recent(count);
   }
 
   canUndo(): boolean {
-    return canUndo(this.eventLog);
+    return this.eventLog.canUndo();
   }
 
   canRedo(): boolean {
-    return canRedo(this.eventLog);
+    return this.eventLog.canRedo();
   }
 
   /** Compact state digest for drift detection. */
@@ -800,12 +826,18 @@ export class DiagramModel {
 
   // ── Style building ───────────────────────────────────────
 
-  private buildShapeStyle(type: ShapeType, theme?: ThemeName): StyleSet {
+  private buildShapeStyle(type: ShapeType, theme?: ThemeName, skipDefaultTheme?: boolean): StyleSet {
     const style = createDefaultStyle();
     const typeDef = NODE_TYPES[type];
 
     if (typeDef && typeDef.baseStyle.includes("rounded=1")) {
       style.rounded = true;
+    }
+
+    // When using a stencil with no explicit theme, skip applying default "blue" theme
+    // so stencil's embedded colors pass through
+    if (skipDefaultTheme && !theme) {
+      return style;
     }
 
     // Apply theme colors
@@ -855,7 +887,7 @@ export class DiagramModel {
   // ── Event handling ───────────────────────────────────────
 
   private emit(event: DiagramEvent): void {
-    appendEvent(this.eventLog, event);
+    this.eventLog.append(event);
     this.diagram.metadata.modified = new Date().toISOString();
   }
 

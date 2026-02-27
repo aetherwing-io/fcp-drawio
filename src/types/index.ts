@@ -83,6 +83,8 @@ export interface StyleSet {
   dashed: boolean;
   shadow: boolean;
   opacity: number; // 0-100
+  align: string | null; // left, center, right
+  verticalAlign: string | null; // top, middle, bottom
   [key: string]: unknown;
 }
 
@@ -90,6 +92,7 @@ export interface EdgeStyleSet extends StyleSet {
   edgeStyle: string;
   curved: boolean;
   flowAnimation: boolean;
+  dotted: boolean;
 }
 
 // ── Theme ────────────────────────────────────────────────────
@@ -122,6 +125,7 @@ export interface Shape {
   parentGroup: string | null;
   layer: string;
   metadata: ShapeMetadata;
+  baseStyleOverride?: string;  // full draw.io style string from stencil packs
   createdAt: number;
   modifiedAt: number;
 }
@@ -197,6 +201,7 @@ export interface Diagram {
   activePage: string; // page ID
   customTypes: Map<string, CustomType>;
   customThemes: Map<string, CustomTheme>;
+  loadedStencilPacks: Set<string>;
   metadata: DiagramMetadata;
 }
 
@@ -247,7 +252,8 @@ export type Verb =
   | "layer"
   | "page"
   | "checkpoint"
-  | "title";
+  | "title"
+  | "load";
 
 export interface KeyValue {
   key: string;

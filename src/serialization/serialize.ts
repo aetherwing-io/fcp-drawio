@@ -51,13 +51,12 @@ function arrowTypeToStyle(arrowType: ArrowType): ArrowStyleParts | null {
  * Pattern: baseStyleFromNodeType;fillColor=#xxx;strokeColor=#xxx;fontSize=12;...
  */
 export function buildShapeStyleString(shape: Shape): string {
-  const typeDef = NODE_TYPES[shape.type];
   const parts: string[] = [];
 
-  // Start with the base style from the node type definition
-  // The base style already ends with ";" so we split and rejoin to avoid double semis
-  if (typeDef) {
-    parts.push(typeDef.baseStyle.replace(/;$/, ""));
+  // Use baseStyleOverride (from stencil packs) if present, otherwise fall back to NODE_TYPES
+  const baseStyle = shape.baseStyleOverride ?? NODE_TYPES[shape.type]?.baseStyle;
+  if (baseStyle) {
+    parts.push(baseStyle.replace(/;$/, ""));
   }
 
   // Append style properties
@@ -68,10 +67,12 @@ export function buildShapeStyleString(shape: Shape): string {
   if (style.fontSize !== null) parts.push(`fontSize=${style.fontSize}`);
   if (style.fontFamily) parts.push(`fontFamily=${style.fontFamily}`);
   if (style.fontStyle !== null && style.fontStyle !== 0) parts.push(`fontStyle=${style.fontStyle}`);
-  if (style.rounded && !typeDef?.baseStyle.includes("rounded=1")) parts.push("rounded=1");
+  if (style.rounded && !(baseStyle?.includes("rounded=1"))) parts.push("rounded=1");
   if (style.dashed) parts.push("dashed=1");
   if (style.shadow) parts.push("shadow=1");
   if (style.opacity !== 100) parts.push(`opacity=${style.opacity}`);
+  if (style.align) parts.push(`align=${style.align}`);
+  if (style.verticalAlign) parts.push(`verticalAlign=${style.verticalAlign}`);
 
   // Append any extensible/unknown properties
   for (const [key, value] of Object.entries(style)) {
@@ -104,9 +105,7 @@ export function buildEdgeStyleString(edge: Edge): string {
 
   // Edge line style
   if (style.dashed) parts.push("dashed=1");
-
-  // Check for dotted via dashPattern — draw.io uses dashed=1;dashPattern=1 1 for dotted
-  // We'll check the EdgeStyleType indirectly through the style properties
+  if (style.dotted) parts.push("dashPattern=1 3");
   if (style.fillColor) parts.push(`fillColor=${style.fillColor}`);
   if (style.strokeColor) parts.push(`strokeColor=${style.strokeColor}`);
   if (style.fontColor) parts.push(`fontColor=${style.fontColor}`);
@@ -157,12 +156,12 @@ export function buildEdgeStyleString(edge: Edge): string {
 
 const KNOWN_STYLE_KEYS = new Set([
   "fillColor", "strokeColor", "fontColor", "fontSize", "fontFamily",
-  "fontStyle", "rounded", "dashed", "shadow", "opacity",
+  "fontStyle", "rounded", "dashed", "shadow", "opacity", "align", "verticalAlign",
 ]);
 
 const KNOWN_EDGE_STYLE_KEYS = new Set([
   ...KNOWN_STYLE_KEYS,
-  "edgeStyle", "curved", "flowAnimation", "strokeWidth",
+  "edgeStyle", "curved", "flowAnimation", "strokeWidth", "dotted",
 ]);
 
 function isKnownStyleKey(key: string): boolean {
@@ -349,21 +348,24 @@ export function serializeDiagram(diagram: Diagram): string {
 
   const pages = diagram.pages.map((page) => serializePage(page));
 
-  // Serialize custom types and themes as JSON in a studio-meta attribute
-  let studioMetaAttr = "";
-  const studioMeta: Record<string, unknown> = {};
+  // Serialize custom types and themes as JSON in a fcp-meta attribute
+  let fcpMetaAttr = "";
+  const fcpMeta: Record<string, unknown> = {};
   if (diagram.customTypes.size > 0) {
-    studioMeta.customTypes = Object.fromEntries(diagram.customTypes);
+    fcpMeta.customTypes = Object.fromEntries(diagram.customTypes);
   }
   if (diagram.customThemes.size > 0) {
-    studioMeta.customThemes = Object.fromEntries(diagram.customThemes);
+    fcpMeta.customThemes = Object.fromEntries(diagram.customThemes);
   }
-  if (Object.keys(studioMeta).length > 0) {
-    studioMetaAttr = ` studio-meta="${escapeXml(JSON.stringify(studioMeta))}"`;
+  if (diagram.loadedStencilPacks.size > 0) {
+    fcpMeta.loadedStencilPacks = [...diagram.loadedStencilPacks];
+  }
+  if (Object.keys(fcpMeta).length > 0) {
+    fcpMetaAttr = ` fcp-meta="${escapeXml(JSON.stringify(fcpMeta))}"`;
   }
 
   return (
-    `<mxfile host="${host}" modified="${modified}" version="${version}"${studioMetaAttr}>\n` +
+    `<mxfile host="${host}" modified="${modified}" version="${version}"${fcpMetaAttr}>\n` +
     pages.join("\n") + "\n" +
     `</mxfile>`
   );

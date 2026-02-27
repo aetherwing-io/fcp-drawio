@@ -1,5 +1,5 @@
 {
-  "name": "drawio-mcp-studio",
+  "name": "fcp-drawio",
   "version": "0.2.0",
   "description": "A Domain Brain MCP tool for creating and editing draw.io diagrams through intent-level commands",
   "type": "module",
@@ -12,6 +12,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@aetherwing/fcp-core": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "elkjs": "^0.11.0",
     "fast-xml-parser": "^4.5.1"

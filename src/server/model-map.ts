@@ -41,7 +41,7 @@ function generateThemesSection(): string {
 }
 
 function buildModelMap(): string {
-  return `DRAW.IO STUDIO — MODEL MAP
+  return `DRAW.IO FCP — MODEL MAP
 
 DOCUMENT: mxfile > diagram[name] > mxGraphModel > root > mxCell[]
   Cells 0,1 always present. Tool manages all XML structure and IDs.
@@ -158,10 +158,48 @@ CONVENTIONS:
   - near:REF dir:DIRECTION places relative to existing shape
   - Themes and types are expanded by the tool into full draw.io styles
   - All XML structure, IDs, and geometry handled by the tool
-  - Custom types (via define) are included in studio_help after creation`;
+  - Custom types (via define) are included in drawio_help after creation`;
 }
 
 const MODEL_MAP_BASE = buildModelMap();
+
+/**
+ * Build domain-specific sections for the VerbRegistry reference card.
+ * Used by createFcpServer() to append drawio-specific reference material
+ * after the verb listing.
+ */
+export function buildReferenceCardSections(snapshotAvailable: boolean): Record<string, string> {
+  const sections: Record<string, string> = {};
+
+  sections["Node Types"] = generateNodeTypesSection();
+
+  sections["Themes (fill / stroke)"] = generateThemesSection();
+
+  sections["Edge Styles"] = `  solid, dashed (- - -), dotted (· · ·), animated, thick, curved, orthogonal
+  Arrows: -> (directed), <-> (bidirectional), -- (undirected)
+  Arrow heads: arrow, open-arrow, diamond, circle, crow-foot, none`;
+
+  sections["Selectors"] = `  @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
+  @all, @orphan, @page:NAME, @layer:NAME`;
+
+  sections["Response Prefixes"] = `  +  shape created       ~  edge created/modified
+  *  shape modified      -  shape/edge removed
+  !  group operation     @  layout/position change`;
+
+  sections["Conventions"] = `  - Labels are unique identifiers - no ID management needed
+  - Position auto-computed if omitted (near last created shape)
+  - near:REF dir:DIRECTION places relative to existing shape
+  - All XML structure, IDs, and geometry handled by the tool
+  - Call drawio_help for full reference with examples`;
+
+  if (snapshotAvailable) {
+    sections["Snapshot"] = `  snapshot                           render diagram to PNG for visual review
+  snapshot width:800                 custom width (default 1200)
+  snapshot page:2                    specific page (1-based)`;
+  }
+
+  return sections;
+}
 
 export function getModelMap(
   customTypes: Map<string, CustomType>,

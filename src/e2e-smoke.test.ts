@@ -35,11 +35,11 @@ describe("E2E Smoke — full architecture diagram", async () => {
   it("creates, populates, queries, saves, and reopens a diagram", async () => {
     const { intent } = makeServer();
 
-    // studio_session: new
+    // drawio_session: new
     const newResult = intent.executeSession('new "Payment System"');
     expect(newResult).toContain("Payment System");
 
-    // studio: add shapes
+    // drawio: add shapes
     const addOps = await intent.executeOps([
       "add api Gateway theme:orange",
       "add svc PaymentService theme:blue near:Gateway dir:below",
@@ -56,7 +56,7 @@ describe("E2E Smoke — full architecture diagram", async () => {
     expect(addOps[0].message).toContain("Gateway");
     expect(addOps[1].message).toContain("+svc");
 
-    // studio: connect
+    // drawio: connect
     const connectOps = await intent.executeOps([
       'connect Gateway -> PaymentService label:"POST /pay"',
       "connect PaymentService -> FraudDetection label:validate",
@@ -67,21 +67,21 @@ describe("E2E Smoke — full architecture diagram", async () => {
     expect(connectOps.every((r) => r.success)).toBe(true);
     expect(connectOps[0].message).toContain("~");
 
-    // studio: group + style
+    // drawio: group + style
     const orgOps = await intent.executeOps([
       "group PaymentService FraudDetection as:CoreServices",
       "style @type:db fill:#e8f5e9",
     ]);
     expect(orgOps.every((r) => r.success)).toBe(true);
 
-    // studio_query: status
+    // drawio_query: status
     const status = intent.executeQuery("status");
     expect(status).toContain("Payment System");
     expect(status).toContain("6 shapes");
     expect(status).toContain("5 edges");
     expect(status).toContain("CoreServices");
 
-    // studio_query: list
+    // drawio_query: list
     const list = intent.executeQuery("list");
     expect(list).toContain("Gateway");
     expect(list).toContain("PaymentService");
@@ -90,17 +90,17 @@ describe("E2E Smoke — full architecture diagram", async () => {
     expect(list).toContain("EventStream");
     expect(list).toContain("StripeAPI");
 
-    // studio_query: stats
+    // drawio_query: stats
     const stats = intent.executeQuery("stats");
     expect(stats).toContain("6");
     expect(stats).toContain("5");
 
-    // studio_query: describe a shape
+    // drawio_query: describe a shape
     const desc = intent.executeQuery("describe PaymentService");
     expect(desc).toContain("PaymentService");
     expect(desc).toContain("svc");
 
-    // studio_query: connections
+    // drawio_query: connections
     const conns = intent.executeQuery("connections PaymentService");
     expect(conns).toContain("FraudDetection");
     expect(conns).toContain("TransactionDB");
@@ -110,7 +110,7 @@ describe("E2E Smoke — full architecture diagram", async () => {
     expect(digest).toMatch(/\[\d+s \d+e \d+g \d+x\d+ p:\d+\/\d+\]/);
     expect(digest).toMatch(/\[6s 5e 1g \d+x\d+ p:1\/1\]/);
 
-    // studio_session: save
+    // drawio_session: save
     const filePath = tmpFile("payment-system.drawio");
     const saveResult = intent.executeSession(`save as:${filePath}`);
     expect(saveResult).toContain("ok: saved");
@@ -123,7 +123,7 @@ describe("E2E Smoke — full architecture diagram", async () => {
     expect(xml).toContain("POST /pay");
     expect(xml).toContain("Gateway");
 
-    // studio_session: open in new server
+    // drawio_session: open in new server
     const { intent: intent2 } = makeServer();
     const openResult = intent2.executeSession(`open ${filePath}`);
     expect(openResult).toContain("ok: opened");

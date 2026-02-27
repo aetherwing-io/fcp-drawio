@@ -15,17 +15,36 @@ import {
 import { runElkLayout } from "../layout/elk-layout.js";
 import type { LayoutOptions } from "../layout/elk-layout.js";
 import { QueryHandler } from "./query-handler.js";
+import type { QueryResult } from "./query-handler.js";
 import { SessionHandler } from "./session-handler.js";
+import { getStencilPack, listStencilPacks } from "../lib/stencils/index.js";
+import type { StencilEntry } from "../lib/stencils/index.js";
 
 export class IntentLayer {
   model: DiagramModel;
   private queryHandler: QueryHandler;
   private sessionHandler: SessionHandler;
+  /** O(1) lookup for loaded stencil entries by their short ID (e.g., "lambda", "s3"). */
+  loadedStencilEntries: Map<string, StencilEntry> = new Map();
 
   constructor() {
     this.model = new DiagramModel();
     this.queryHandler = new QueryHandler(this.model);
     this.sessionHandler = new SessionHandler(this.model);
+  }
+
+  /** Rebuild the stencil entry lookup from loaded packs (e.g., after deserialization). */
+  restoreStencilPacks(): void {
+    this.loadedStencilEntries.clear();
+    for (const packId of this.model.diagram.loadedStencilPacks) {
+      const pack = getStencilPack(packId);
+      if (!pack) continue;
+      for (const entry of pack.entries) {
+        if (!this.loadedStencilEntries.has(entry.id)) {
+          this.loadedStencilEntries.set(entry.id, entry);
+        }
+      }
+    }
   }
 
   // ── Suggestion helpers ──────────────────────────────────
@@ -52,7 +71,7 @@ export class IntentLayer {
     return results;
   }
 
-  executeQuery(query: string): string {
+  executeQuery(query: string): string | QueryResult | Promise<QueryResult> {
     try {
       return this.queryHandler.dispatch(query.trim());
     } catch (err: unknown) {
@@ -62,14 +81,17 @@ export class IntentLayer {
 
   executeSession(action: string): string {
     try {
-      return this.sessionHandler.dispatch(action.trim());
+      const result = this.sessionHandler.dispatch(action.trim());
+      // After open/new, restore stencil pack entries from diagram metadata
+      this.restoreStencilPacks();
+      return result;
     } catch (err: unknown) {
       return `Error: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
   getHelp(): string {
-    return getModelMap(this.model.diagram.customTypes, this.model.diagram.customThemes);
+    return getModelMap(this.model.diagram.customTypes, this.model.diagram.customThemes, this.model.diagram.loadedStencilPacks);
   }
 
   // ── Single op execution ────────────────────────────────
@@ -111,6 +133,7 @@ export class IntentLayer {
       case "layer": return this.handleLayer(op);
       case "layout": return this.handleLayout(op);
       case "orient": return this.handleOrient(op);
+      case "load": return this.handleLoad(op);
       default:
         return { success: false, message: `Unhandled verb: ${op.verb}` };
     }
@@ -130,22 +153,36 @@ export class IntentLayer {
     let theme: ThemeName | undefined = op.params.get("theme") as ThemeName | undefined;
     let badgeText: string | undefined;
 
+    let baseStyleOverride: string | undefined;
+    let skipDefaultTheme = false;
+    let stencilSize: { width: number; height: number } | undefined;
+
     if (op.type) {
-      // Check custom types first
+      // 1. Check custom types first
       const ct = customTypes.get(op.type);
       if (ct) {
         resolvedType = ct.base;
         if (!theme && ct.theme) theme = ct.theme;
         if (ct.badge) badgeText = ct.badge;
       } else if (isShapeType(op.type)) {
+        // 2. Built-in types
         resolvedType = op.type;
       } else {
-        // Unknown type — treat as label, shift: type becomes part of the label
-        const inferred = inferTypeFromLabel(op.type);
-        if (inferred) {
-          resolvedType = inferred;
+        // 3. Check loaded stencil types
+        const stencilEntry = this.loadedStencilEntries.get(op.type);
+        if (stencilEntry) {
+          resolvedType = "svc";  // fallback base type for the model
+          baseStyleOverride = stencilEntry.baseStyle;
+          stencilSize = { width: stencilEntry.defaultWidth, height: stencilEntry.defaultHeight };
+          skipDefaultTheme = !theme;  // only skip if user didn't explicitly set theme
         } else {
-          resolvedType = "svc";
+          // 4. Unknown type — treat as label, shift: type becomes part of the label
+          const inferred = inferTypeFromLabel(op.type);
+          if (inferred) {
+            resolvedType = inferred;
+          } else {
+            resolvedType = "svc";
+          }
         }
       }
     } else {
@@ -226,10 +263,12 @@ export class IntentLayer {
     const results: string[] = [];
     const warnings: string[] = [];
 
+    const labelOverride = op.params.get("label");
+
     for (let i = 0; i < count; i++) {
-      const label = count > 1
-        ? `${op.target}${i + 1}`
-        : (op.target ?? "Untitled");
+      const label = labelOverride
+        ? (count > 1 ? `${labelOverride}${i + 1}` : labelOverride)
+        : (count > 1 ? `${op.target}${i + 1}` : (op.target ?? "Untitled"));
 
       const shape = this.model.addShape(label, resolvedType, {
         theme: customThemeColors ? undefined : theme,
@@ -237,7 +276,9 @@ export class IntentLayer {
         dir: dir ?? undefined,
         at,
         inGroup,
-        size,
+        size: size ?? stencilSize,
+        baseStyleOverride,
+        skipDefaultTheme,
       });
 
       // Apply custom theme colors if using a custom theme
@@ -343,12 +384,32 @@ export class IntentLayer {
       if (styleParam) {
         switch (styleParam) {
           case "dashed": edgeStyleOverrides.dashed = true; break;
-          case "dotted": edgeStyleOverrides.dashed = true; break;
+          case "dotted": edgeStyleOverrides.dashed = true; edgeStyleOverrides.dotted = true; break;
           case "animated": edgeStyleOverrides.flowAnimation = true; break;
           case "curved": edgeStyleOverrides.curved = true; break;
           case "thick": break; // handled at render time
           case "orthogonal": edgeStyleOverrides.edgeStyle = "orthogonalEdgeStyle"; break;
         }
+      }
+
+      // Port hints: exit:top/bottom/left/right, entry:top/bottom/left/right
+      const exitHint = op.params.get("exit");
+      const entryHint = op.params.get("entry");
+      const portCoords: Record<string, [number, number]> = {
+        top: [0.5, 0],
+        bottom: [0.5, 1],
+        left: [0, 0.5],
+        right: [1, 0.5],
+      };
+      if (exitHint && portCoords[exitHint]) {
+        const [x, y] = portCoords[exitHint];
+        (edgeStyleOverrides as Record<string, unknown>)["exitX"] = x;
+        (edgeStyleOverrides as Record<string, unknown>)["exitY"] = y;
+      }
+      if (entryHint && portCoords[entryHint]) {
+        const [x, y] = portCoords[entryHint];
+        (edgeStyleOverrides as Record<string, unknown>)["entryX"] = x;
+        (edgeStyleOverrides as Record<string, unknown>)["entryY"] = y;
       }
 
       const edge = this.model.addEdge(srcResult.shape.id, tgtResult.shape.id, {
@@ -429,6 +490,8 @@ export class IntentLayer {
       }
 
       // Apply style params to group.style
+      let groupFontEnable = 0;
+      let groupFontDisable = 0;
       for (const [key, value] of op.params) {
         switch (key) {
           case "fill": {
@@ -441,12 +504,14 @@ export class IntentLayer {
             if (color) group.style.strokeColor = color;
             break;
           }
+          case "font":
           case "font-color": {
             const color = resolveColor(value);
             if (color) group.style.fontColor = color;
             break;
           }
           case "font-size":
+          case "fontSize":
             group.style.fontSize = parseInt(value, 10);
             break;
           case "opacity":
@@ -461,11 +526,31 @@ export class IntentLayer {
           case "shadow":
             group.style.shadow = value === "true" || value === "1";
             break;
+          case "bold": groupFontEnable |= 1; break;
+          case "no-bold": groupFontDisable |= 1; break;
+          case "italic": groupFontEnable |= 2; break;
+          case "no-italic": groupFontDisable |= 2; break;
+          case "underline": groupFontEnable |= 4; break;
+          case "no-underline": groupFontDisable |= 4; break;
+          case "font-family":
+            group.style.fontFamily = value;
+            break;
+          case "align":
+            group.style.align = value;
+            break;
+          case "valign":
+            group.style.verticalAlign = value;
+            break;
         }
+      }
+      if (groupFontEnable !== 0 || groupFontDisable !== 0) {
+        const base = group.style.fontStyle ?? 0;
+        group.style.fontStyle = (base | groupFontEnable) & ~groupFontDisable;
       }
 
       const propList = [...op.params.entries()]
-        .map(([k, v]) => `${k}:${v}`)
+        .filter(([k]) => k !== "theme")
+        .map(([k, v]) => v === "true" ? k : `${k}:${v}`)
         .join(" ");
 
       return {
@@ -514,6 +599,10 @@ export class IntentLayer {
       }
     }
 
+    // Track fontStyle bitmask operations separately (applied per-shape)
+    let fontStyleEnable = 0;
+    let fontStyleDisable = 0;
+
     for (const [key, value] of op.params) {
       switch (key) {
         case "fill": {
@@ -526,14 +615,16 @@ export class IntentLayer {
           if (color) styleChanges.strokeColor = color;
           break;
         }
-        case "font-size":
-          styleChanges.fontSize = parseInt(value, 10);
-          break;
+        case "font":
         case "font-color": {
           const color = resolveColor(value);
           if (color) styleChanges.fontColor = color;
           break;
         }
+        case "font-size":
+        case "fontSize":
+          styleChanges.fontSize = parseInt(value, 10);
+          break;
         case "opacity":
           styleChanges.opacity = parseInt(value, 10);
           break;
@@ -546,19 +637,55 @@ export class IntentLayer {
         case "shadow":
           styleChanges.shadow = value === "true" || value === "1";
           break;
+        // Text styling — bare boolean flags
+        case "bold":
+          fontStyleEnable |= 1;
+          break;
+        case "no-bold":
+          fontStyleDisable |= 1;
+          break;
+        case "italic":
+          fontStyleEnable |= 2;
+          break;
+        case "no-italic":
+          fontStyleDisable |= 2;
+          break;
+        case "underline":
+          fontStyleEnable |= 4;
+          break;
+        case "no-underline":
+          fontStyleDisable |= 4;
+          break;
+        // Font family and alignment — key:value params
+        case "font-family":
+          styleChanges.fontFamily = value;
+          break;
+        case "align":
+          styleChanges.align = value;
+          break;
+        case "valign":
+          styleChanges.verticalAlign = value;
+          break;
       }
     }
+
+    const hasFontStyleOps = fontStyleEnable !== 0 || fontStyleDisable !== 0;
 
     let modifiedCount = 0;
     for (const shape of shapes) {
       const newStyle = { ...shape.style, ...styleChanges };
+      // Apply fontStyle bitmask operations relative to each shape's existing value
+      if (hasFontStyleOps) {
+        const base = shape.style.fontStyle ?? 0;
+        newStyle.fontStyle = (base | fontStyleEnable) & ~fontStyleDisable;
+      }
       const result = this.model.modifyShape(shape.id, { style: newStyle });
       if (result) modifiedCount++;
     }
 
     const propList = [...op.params.entries()]
       .filter(([k]) => k !== "theme")
-      .map(([k, v]) => `${k}:${v}`)
+      .map(([k, v]) => v === "true" ? k : `${k}:${v}`)
       .join(" ");
 
     return {
@@ -605,6 +732,31 @@ export class IntentLayer {
       return { success: false, message: "label requires new text" };
     }
 
+    // Edge form: label A -> B "text"
+    if (op.targets && op.targets.length >= 2 && op.arrows && op.arrows.length > 0) {
+      const srcResolved = resolveRef(op.targets[0], this.model.registry, this.model);
+      if (srcResolved.kind !== "single") {
+        return { success: false, message: srcResolved.message };
+      }
+      const tgtResolved = resolveRef(op.targets[1], this.model.registry, this.model);
+      if (tgtResolved.kind !== "single") {
+        return { success: false, message: tgtResolved.message };
+      }
+
+      const edge = this.model.findEdge(srcResolved.shape.id, tgtResolved.shape.id);
+      if (!edge) {
+        return { success: false, message: `No edge from ${op.targets[0]} to ${op.targets[1]}` };
+      }
+
+      const result = this.model.modifyEdge(edge.id, { label: newText });
+      if (!result) {
+        return { success: false, message: `Failed to relabel edge` };
+      }
+
+      return { success: true, message: `~${op.targets[0]}->${op.targets[1]} labeled "${newText}"` };
+    }
+
+    // Shape form: label REF "text"
     const resolved = resolveRef(op.target, this.model.registry, this.model);
     if (resolved.kind !== "single") {
       if (resolved.kind === "none") {
@@ -939,6 +1091,28 @@ export class IntentLayer {
       return { success: false, message: "Failed to create group" };
     }
 
+    // Apply label: param as display name (group.name is used as XML value)
+    const labelParam = op.params.get("label");
+    if (labelParam) {
+      group.name = labelParam.replace(/_/g, " ");
+    }
+
+    // Apply theme: param to group style
+    const themeParam = op.params.get("theme");
+    if (themeParam) {
+      const customTheme = this.model.diagram.customThemes.get(themeParam);
+      if (customTheme) {
+        group.style.fillColor = customTheme.fill;
+        group.style.strokeColor = customTheme.stroke;
+        if (customTheme.fontColor) group.style.fontColor = customTheme.fontColor;
+      } else if (isThemeName(themeParam)) {
+        const colors = THEMES[themeParam as ThemeName];
+        group.style.fillColor = colors.fill;
+        group.style.strokeColor = colors.stroke;
+        if (colors.fontColor) group.style.fontColor = colors.fontColor;
+      }
+    }
+
     return { success: true, message: formatGroupCreated(group) };
   }
 
@@ -1203,6 +1377,71 @@ export class IntentLayer {
 
     this.model.setFlowDirection(dir as import("../types/index.js").FlowDirection);
     return { success: true, message: `@orient ${dir}` };
+  }
+
+  // ── Load (stencil packs) ────────────────────────────────
+
+  private handleLoad(op: ParsedOp): OpResult {
+    const target = op.target?.toLowerCase();
+    if (!target) {
+      return { success: false, message: "load requires a target: use 'load list' or 'load PACK'" };
+    }
+
+    // load list — show available packs
+    if (target === "list") {
+      const packs = listStencilPacks();
+      const lines = packs.map(p => {
+        const loaded = this.model.diagram.loadedStencilPacks.has(p.id) ? " (loaded)" : "";
+        return `  ${p.id.padEnd(8)} ${p.name} (${p.entryCount} types)${loaded}`;
+      });
+      return {
+        success: true,
+        message: "Available stencil packs:\n" + lines.join("\n"),
+      };
+    }
+
+    // load PACK — activate a stencil pack
+    const pack = getStencilPack(target);
+    if (!pack) {
+      const available = listStencilPacks().map(p => p.id).join(", ");
+      return {
+        success: false,
+        message: `Unknown stencil pack "${target}". Available: ${available}`,
+      };
+    }
+
+    // Check if already loaded
+    if (this.model.diagram.loadedStencilPacks.has(target)) {
+      return { success: true, message: `Stencil pack "${pack.name}" is already loaded` };
+    }
+
+    // Register entries (first-loaded wins on conflicts)
+    let newEntries = 0;
+    for (const entry of pack.entries) {
+      if (!this.loadedStencilEntries.has(entry.id)) {
+        this.loadedStencilEntries.set(entry.id, entry);
+        newEntries++;
+      }
+    }
+
+    this.model.diagram.loadedStencilPacks.add(target);
+
+    // Build category summary
+    const categories = new Map<string, string[]>();
+    for (const entry of pack.entries) {
+      const cat = categories.get(entry.category) ?? [];
+      cat.push(entry.id);
+      categories.set(entry.category, cat);
+    }
+
+    const catLines = [...categories.entries()].map(
+      ([cat, ids]) => `  ${cat}: ${ids.join(", ")}`
+    );
+
+    return {
+      success: true,
+      message: `Loaded "${pack.name}" (${newEntries} types)\n${catLines.join("\n")}`,
+    };
   }
 
 }

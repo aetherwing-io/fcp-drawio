@@ -1,4 +1,5 @@
 import type { Shape } from "../types/index.js";
+import type { SnapshotResult } from "../lib/drawio-cli.js";
 import { DiagramModel } from "../model/diagram-model.js";
 import { resolveRef } from "../parser/resolve-ref.js";
 import { tokenize } from "../parser/tokenizer.js";
@@ -7,10 +8,19 @@ import {
   formatStatus, formatHistory, formatMap,
 } from "./response-formatter.js";
 
-export class QueryHandler {
-  constructor(private model: DiagramModel) {}
+export interface QueryResult {
+  text: string;
+  image?: SnapshotResult;
+}
 
-  dispatch(query: string): string {
+export class QueryHandler {
+  private drawioCliPath: string | null;
+
+  constructor(private model: DiagramModel, drawioCliPath: string | null = null) {
+    this.drawioCliPath = drawioCliPath;
+  }
+
+  dispatch(query: string): string | QueryResult | Promise<QueryResult> {
     const tokens = tokenize(query);
     if (tokens.length === 0) return "Empty query";
 

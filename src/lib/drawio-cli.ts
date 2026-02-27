@@ -76,7 +76,7 @@ export async function renderSnapshot(options: SnapshotOptions): Promise<Snapshot
           "--width", String(width),
           "--crop",
           "--border", "10",
-          "--page-index", String(page - 1), // CLI is 0-based, API is 1-based
+          "--page-index", String(page), // CLI is 1-based, same as our API
           "--output", outputPath,
           inputPath,
         ],

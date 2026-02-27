@@ -1,8 +1,8 @@
-# drawio-mcp-studio
+# fcp-drawio
 
 ## Project Overview
 MCP server that lets LLMs create/edit draw.io diagrams through intent-level operation strings.
-See `plan/drawio-mcp-studio-spec-v2.md` for the full design specification.
+See `docs/` for design documents and specifications.
 
 ## Architecture
 4-layer architecture:

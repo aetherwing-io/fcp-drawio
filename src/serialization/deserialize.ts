@@ -458,11 +458,10 @@ export function deserializeDiagram(xml: string): Diagram {
   };
 
   // Extract fcp-meta (custom types/themes/stencil packs)
-  // Falls back to studio-meta for backward compatibility with older files
   let customTypes = new Map<string, CustomType>();
   let customThemes = new Map<string, CustomTheme>();
   let loadedStencilPacks = new Set<string>();
-  const fcpMetaRaw = mxfile["@_fcp-meta"] ?? mxfile["@_studio-meta"];
+  const fcpMetaRaw = mxfile["@_fcp-meta"];
   if (fcpMetaRaw) {
     try {
       const fcpMeta = JSON.parse(fcpMetaRaw);

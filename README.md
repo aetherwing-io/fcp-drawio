@@ -9,7 +9,7 @@ fcp-drawio lets LLMs build architecture diagrams, flowcharts, and system maps by
 ## Quick Example
 
 ```
-studio([
+drawio([
   'add svc AuthService theme:blue',
   'add db UserDB theme:green near:AuthService dir:right',
   'connect AuthService -> UserDB label:queries',
@@ -31,10 +31,10 @@ This produces a draw.io diagram with a blue rounded-rectangle service node, a gr
 
 | Tool | Purpose |
 |------|---------|
-| `studio(ops)` | Batch mutations -- add shapes, connect, style, group, layout |
-| `studio_query(q)` | Inspect the diagram -- map, list, describe, connections, find |
-| `studio_session(action)` | Lifecycle -- new, open, save, checkpoint, undo, redo |
-| `studio_help()` | Full reference card |
+| `drawio(ops)` | Batch mutations -- add shapes, connect, style, group, layout |
+| `drawio_query(q)` | Inspect the diagram -- map, list, describe, connections, find |
+| `drawio_session(action)` | Lifecycle -- new, open, save, checkpoint, undo, redo |
+| `drawio_help()` | Full reference card |
 
 ### Component Library
 
@@ -59,7 +59,7 @@ Apply color themes to any shape: `blue`, `green`, `red`, `orange`, `purple`, `ye
 
 ## Installation
 
-Requires Node >= 18.
+Requires Node >= 22.
 
 ```bash
 npm install @aetherwing/fcp-drawio

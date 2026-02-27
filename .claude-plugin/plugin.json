@@ -1,9 +1,22 @@
 {
   "name": "@aetherwing/fcp-drawio",
   "description": "MCP server for creating and editing draw.io diagrams through intent-level commands",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "author": "Scott Meyer",
   "repository": "https://github.com/aetherwing-io/fcp-drawio",
-  "keywords": ["drawio", "diagrams", "architecture", "mcp"]
+  "keywords": ["drawio", "diagrams", "architecture", "mcp"],
+  "mcpServers": {
+    "fcp-drawio": {
+      "command": "node",
+      "args": ["node_modules/@aetherwing/fcp-drawio/dist/index.js"]
+    }
+  },
+  "skills": [
+    {
+      "id": "drawio",
+      "name": "Draw.io Diagrams",
+      "description": "Create architecture diagrams, flowcharts, and system maps"
+    }
+  ]
 }

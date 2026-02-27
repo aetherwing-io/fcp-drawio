@@ -1,0 +1,16 @@
+#!/bin/sh
+# Guard against file: references in package.json
+# Use `make link` for local cross-repo development instead.
+
+if git diff --cached --name-only | grep -q '^package\.json$'; then
+  if git diff --cached -- package.json | grep -q '"file:'; then
+    echo "ERROR: package.json contains a file: reference."
+    echo ""
+    echo "  file: references break CI and anyone cloning this repo."
+    echo "  Use 'make link' in the root fcp/ directory for local development."
+    echo ""
+    echo "  To fix: revert the file: change, then run 'make link' to symlink."
+    echo ""
+    exit 1
+  fi
+fi

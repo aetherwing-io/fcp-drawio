@@ -7,7 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for local file references
+        run: |
+          if grep -q '"file:' package.json; then
+            echo "::error::package.json contains file: references that break CI installs"
+            exit 1
+          fi
+
   test:
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
       matrix:

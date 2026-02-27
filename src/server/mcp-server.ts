@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { IntentLayer } from "./intent-layer.js";
+import type { QueryResult } from "./query-handler.js";
 
 export function createServer(): { server: McpServer; intent: IntentLayer } {
   const intent = new IntentLayer();
@@ -16,11 +17,7 @@ export function createServer(): { server: McpServer; intent: IntentLayer } {
     "studio",
     `Execute diagram operations. Each op string follows: VERB [TYPE] TARGET [key:value ...]
 
-MODEL MAP:
 DRAW.IO STUDIO — MODEL MAP
-
-DOCUMENT: mxfile > diagram[name] > mxGraphModel > root > mxCell[]
-  Cells 0,1 always present. Tool manages all XML structure and IDs.
 
 NODE TYPES:
   svc        rounded rectangle (services, components)
@@ -43,17 +40,80 @@ THEMES (fill / stroke):
   gray       #f5f5f5 / #666666    dark     #1a1a2e / #16213e (light text)
   white      #ffffff / #000000
 
-EDGE STYLES: solid, dashed, dotted, animated, thick, curved, orthogonal
+EDGE STYLES: solid, dashed (- - -), dotted (· · ·), animated, thick, curved, orthogonal
 ARROWS: -> (directed), <-> (bidirectional), -- (undirected)
 ARROW HEADS: arrow, open-arrow, diamond, circle, crow-foot, none
 
-OPERATIONS: add, connect, style, move, resize, swap, label, badge,
-            group, ungroup, remove, layout, orient, define, page, layer
+OPERATIONS:
+
+ADD
+  add TYPE LABEL [theme:T] [near:REF dir:DIR] [at:X,Y] [size:WxH] [label:"Display Name"]
+  Ex: add svc AuthService theme:blue near:Gateway dir:right
+
+CONNECT
+  connect SRC ARROW TGT [label:"text"] [style:STYLE] [exit:FACE entry:FACE]
+  Ex: connect AuthService -> UserDB label:queries style:dashed
+
+DISCONNECT
+  disconnect SRC -> TGT
+
+LABEL
+  label REF "new text"              rename shape
+  label SRC -> TGT "new text"       relabel edge
+  Ex: label Gateway "API Gateway v2"
+
+STYLE
+  style REF [fill:#HEX] [stroke:#HEX] [font:#HEX] [fontSize:N]
+  style REF [bold] [italic] [underline] [no-bold] [no-italic] [no-underline]
+  style REF [font-family:NAME] [align:left|center|right] [valign:top|middle|bottom]
+  style @SELECTOR [same params]
+  Ex: style AuthService fill:#ff0000 bold fontSize:16
+  Ex: style @type:db font-family:Courier align:left
+
+MOVE
+  move REF to:X,Y | to:REGION | near:REF dir:DIR
+  move @group:NAME to:REGION|X,Y
+  Regions: top-left, top-center, top-right, center, bottom-left, bottom-right
+
+RESIZE
+  resize REF to:WxH
+
+REMOVE
+  remove REF | remove @SELECTOR
+
+SWAP
+  swap REF REF (exchange positions)
+
+BADGE
+  badge REF "text" [pos:top-left|top-right|bottom-left|bottom-right]
+
+GROUP / UNGROUP
+  group REF REF ... as:"Group Name"
+  ungroup "Group Name"
+
+LAYOUT
+  layout @all algo:layered|force|tree dir:TB|LR|BT|RL [spacing:N]
+
+ORIENT
+  orient TB|LR|BT|RL (page flow direction)
+
+DEFINE
+  define NAME base:TYPE [theme:T] [badge:"text"] [size:WxH]
+
+LOAD (stencil packs)
+  load list                          show available stencil packs
+  load PACK                          activate (aws, azure, gcp, k8s, cisco, ibm)
+
+PAGE / LAYER / CHECKPOINT / TITLE
+  page add|switch|remove|list "Name"
+  layer create|switch|show|hide|list "Name"
+  checkpoint NAME (snapshot; undo to:NAME restores)
+  title "Diagram Title"
 
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
 
-RESPONSE PREFIXES (read-only, tool-generated):
+RESPONSE PREFIXES:
   +  shape created       ~  edge created/modified
   *  shape modified      -  shape/edge removed
   !  group operation     @  layout/position change
@@ -62,11 +122,8 @@ CONVENTIONS:
   - Labels are unique identifiers — no ID management needed
   - Position auto-computed if omitted (near last created shape)
   - near:REF dir:DIRECTION places relative to existing shape
-  - Themes and types are expanded by the tool into full draw.io styles
   - All XML structure, IDs, and geometry handled by the tool
-  - Custom types (via define) are included in studio_help after creation
-
-Examples: 'add svc AuthService theme:blue', 'connect A -> B label:queries'`,
+  - Call studio_help for full reference with examples`,
     {
       ops: z.array(z.string()).describe(
         "Array of operation strings. Examples: 'add svc AuthService theme:blue', 'connect A -> B label:queries', 'style A fill:red'"
@@ -101,10 +158,27 @@ Examples: 'add svc AuthService theme:blue', 'connect A -> B label:queries'`,
       ),
     },
     async ({ q }) => {
-      const text = intent.executeQuery(q);
-      return {
-        content: [{ type: "text" as const, text }],
-      };
+      const result = intent.executeQuery(q);
+
+      // Handle async results (snapshot)
+      const resolved = result instanceof Promise ? await result : result;
+
+      // String result — text-only response
+      if (typeof resolved === "string") {
+        return {
+          content: [{ type: "text" as const, text: resolved }],
+        };
+      }
+
+      // QueryResult with optional image
+      const qr = resolved as QueryResult;
+      const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
+      if (qr.image) {
+        content.push({ type: "image" as const, data: qr.image.base64, mimeType: qr.image.mimeType });
+      }
+      content.push({ type: "text" as const, text: qr.text });
+
+      return { content };
     },
   );
 

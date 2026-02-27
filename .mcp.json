@@ -2,10 +2,7 @@
   "mcpServers": {
     "fcp-drawio": {
       "command": "node",
-      "args": [
-        "dist/index.js"
-      ],
-      "cwd": "."
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"]
     }
   }
 }

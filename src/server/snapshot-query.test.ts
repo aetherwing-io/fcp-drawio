@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectDrawioCLI } from "../lib/drawio-cli.js";
 import { IntentLayer } from "./intent-layer.js";
+import { getModelMap } from "./model-map.js";
 
 const cliPath = detectDrawioCLI();
 
@@ -57,5 +58,17 @@ describe("mcp response format", () => {
     expect(content).toHaveLength(2);
     expect(content[0].type).toBe("image");
     expect(content[1].type).toBe("text");
+  });
+});
+
+describe("model-map snapshot advertising", () => {
+  it("shows SNAPSHOT section in help when CLI detected", () => {
+    const help = getModelMap(new Map(), undefined, undefined, true);
+    expect(help).toContain("SNAPSHOT:");
+  });
+
+  it("does NOT show SNAPSHOT section in help when CLI not detected", () => {
+    const help = getModelMap(new Map(), undefined, undefined, false);
+    expect(help).not.toContain("SNAPSHOT:");
   });
 });

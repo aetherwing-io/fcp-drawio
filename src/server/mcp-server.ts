@@ -156,7 +156,7 @@ CONVENTIONS:
     "Query diagram state. Returns shape lists, descriptions, spatial map, stats, or connection info.",
     {
       q: z.string().describe(
-        "Query: 'map' (spatial summary), 'list', 'list @type:db', 'describe AuthService', 'connections AuthService', 'stats', 'status', 'find Auth', 'diff checkpoint:v1', 'history 5'"
+        "Query: 'map' (spatial summary), 'list', 'list @type:db', 'describe AuthService', 'connections AuthService', 'stats', 'status', 'find Auth', 'diff checkpoint:v1', 'history 5', 'snapshot' (visual render)"
       ),
     },
     async ({ q }) => {

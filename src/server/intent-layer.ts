@@ -93,7 +93,12 @@ export class IntentLayer {
   }
 
   getHelp(): string {
-    return getModelMap(this.model.diagram.customTypes, this.model.diagram.customThemes, this.model.diagram.loadedStencilPacks);
+    return getModelMap(
+      this.model.diagram.customTypes,
+      this.model.diagram.customThemes,
+      this.model.diagram.loadedStencilPacks,
+      this.drawioCliPath !== null,
+    );
   }
 
   // ── Single op execution ────────────────────────────────

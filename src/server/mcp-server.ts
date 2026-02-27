@@ -3,9 +3,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { IntentLayer } from "./intent-layer.js";
 import type { QueryResult } from "./query-handler.js";
+import { detectDrawioCLI } from "../lib/drawio-cli.js";
 
 export function createServer(): { server: McpServer; intent: IntentLayer } {
-  const intent = new IntentLayer();
+  const drawioCliPath = detectDrawioCLI();
+  const intent = new IntentLayer({ drawioCliPath });
 
   const server = new McpServer({
     name: "drawio-mcp-studio",

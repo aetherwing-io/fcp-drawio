@@ -11,6 +11,8 @@ See `docs/` for design documents and specifications.
 3. **Layout + Rendering** - Part of model layer for Phase 1 (basic positioning)
 4. **Serialization** - `src/serialization/` - Semantic model ↔ mxGraphModel XML
 
+**Implementation Tier**: Tier 3 (no native TypeScript SDK for draw.io). The DiagramModel semantic model + custom XML serializer is the correct pattern for this tier. See `fcp-core/spec/implementation-guide.md`.
+
 ## Key Directories
 - `src/types/` - Core TypeScript interfaces
 - `src/model/` - Semantic model, event sourcing, reference registry

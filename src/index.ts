@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { startServer } from "./server/mcp-server.js";
 
 startServer().catch((err) => {

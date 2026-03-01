@@ -41,8 +41,9 @@ describe("tokenize", () => {
   });
 
   it("converts literal \\n to newline in embedded quoted values", () => {
+    // tokenize preserves embedded quotes — parseKeyValue strips them
     const result = tokenize('label:"Line1\\nLine2"');
-    expect(result).toEqual(["label:Line1\nLine2"]);
+    expect(result).toEqual(['label:"Line1\nLine2"']);
   });
 
   it("converts multiple \\n sequences", () => {

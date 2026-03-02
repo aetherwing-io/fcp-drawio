@@ -101,6 +101,8 @@ export function buildEdgeStyleString(edge: Edge): string {
   }
   parts.push("orthogonalLoop=1");
   parts.push("jettySize=auto");
+  parts.push("jumpStyle=arc");
+  parts.push("jumpSize=13");
   parts.push("html=1");
 
   // Edge line style
@@ -123,6 +125,9 @@ export function buildEdgeStyleString(edge: Edge): string {
 
   // Flow animation
   if (style.flowAnimation) parts.push("flowAnimation=1");
+
+  // Label background for readability when edge crosses other edges
+  if (edge.label) parts.push("labelBackgroundColor=#FFFFFF");
 
   // Target arrow
   const targetParts = arrowTypeToStyle(edge.targetArrow);
@@ -262,8 +267,9 @@ function serializePage(page: Page): string {
       }
     }
 
+    const aliasAttr = shape.alias ? ` fcp-alias="${escapeXml(shape.alias)}"` : "";
     cells.push(
-      `      <mxCell id="${escapeXml(shape.id)}" value="${escapeXml(shape.label)}" style="${escapeXml(styleStr)}" vertex="1" parent="${escapeXml(parent)}">\n` +
+      `      <mxCell id="${escapeXml(shape.id)}" value="${escapeXml(shape.label)}"${aliasAttr} style="${escapeXml(styleStr)}" vertex="1" parent="${escapeXml(parent)}">\n` +
       `        <mxGeometry x="${x}" y="${y}" width="${b.width}" height="${b.height}" as="geometry"/>\n` +
       `      </mxCell>`
     );

@@ -762,3 +762,59 @@ describe("round-trip — custom types and themes", () => {
     expect(restored.customThemes.get("alert")!.fill).toBe("#ff0000");
   });
 });
+
+// ── Alias round-trip (Fix 5) ─────────────────────────────
+
+describe("serialization — alias", () => {
+  it("round-trips alias through serialize/deserialize", () => {
+    const shape = model.addShape("Display Name", "svc");
+    model.modifyShape(shape.id, { alias: "Ref" });
+
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).toContain('fcp-alias="Ref"');
+
+    const restored = deserializeDiagram(xml);
+    const page = restored.pages[0];
+    const restoredShape = [...page.shapes.values()][0];
+    expect(restoredShape.alias).toBe("Ref");
+  });
+
+  it("shapes without alias have no fcp-alias attribute", () => {
+    model.addShape("NoAlias", "svc");
+
+    const xml = serializeDiagram(model.diagram);
+    expect(xml).not.toContain("fcp-alias");
+  });
+});
+
+// ── Edge style improvements (Fix 6) ─────────────────────
+
+describe("serialization — edge style improvements", () => {
+  it("edge style includes jump arc settings", () => {
+    const a = model.addShape("A", "svc");
+    const b = model.addShape("B", "svc");
+    const edge = model.addEdge(a.id, b.id)!;
+
+    const styleStr = buildEdgeStyleString(edge);
+    expect(styleStr).toContain("jumpStyle=arc");
+    expect(styleStr).toContain("jumpSize=13");
+  });
+
+  it("labeled edge includes labelBackgroundColor", () => {
+    const a = model.addShape("A", "svc");
+    const b = model.addShape("B", "svc");
+    const edge = model.addEdge(a.id, b.id, { label: "queries" })!;
+
+    const styleStr = buildEdgeStyleString(edge);
+    expect(styleStr).toContain("labelBackgroundColor=#FFFFFF");
+  });
+
+  it("unlabeled edge does not include labelBackgroundColor", () => {
+    const a = model.addShape("A", "svc");
+    const b = model.addShape("B", "svc");
+    const edge = model.addEdge(a.id, b.id)!;
+
+    const styleStr = buildEdgeStyleString(edge);
+    expect(styleStr).not.toContain("labelBackgroundColor");
+  });
+});

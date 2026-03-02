@@ -172,7 +172,7 @@ export class DiagramModel {
     return shape;
   }
 
-  modifyShape(id: string, changes: Partial<Pick<Shape, "label" | "type" | "bounds" | "style" | "parentGroup" | "metadata">>): Shape | null {
+  modifyShape(id: string, changes: Partial<Pick<Shape, "label" | "type" | "bounds" | "style" | "parentGroup" | "metadata" | "alias">>): Shape | null {
     const page = this.getActivePage();
     const shape = page.shapes.get(id);
     if (!shape) return null;

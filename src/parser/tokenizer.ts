@@ -5,8 +5,11 @@
  */
 export {
   tokenize,
+  tokenizeWithMeta,
+  type TokenMeta,
   isKeyValue,
   parseKeyValue,
+  parseKeyValueWithMeta,
   isArrow,
   isSelector,
 } from "@aetherwing/fcp-core";

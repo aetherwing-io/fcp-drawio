@@ -480,6 +480,115 @@ describe("parseOp — disconnect", () => {
   });
 });
 
+// ── Colon in quoted strings (Fix 1) ──────────────────────
+
+describe("parseOp — quoted strings with colons", () => {
+  it("treats quoted string with colon as target, not key:value", () => {
+    const op = parseOp('add svc "threshold: 5 seconds" theme:blue');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("add");
+      expect(op.type).toBe("svc");
+      expect(op.target).toBe("threshold: 5 seconds");
+      expect(op.params.get("theme")).toBe("blue");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("title with colon is parsed correctly", () => {
+    const op = parseOp('title "Current Architecture: Single Point of Failure"');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("title");
+      expect(op.target).toBe("Current Architecture: Single Point of Failure");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("connect with quoted colon-containing refs", () => {
+    const op = parseOp('connect "Service: Auth" -> "Service: DB"');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("connect");
+      expect(op.targets).toEqual(["Service: Auth", "Service: DB"]);
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("unquoted key:value still works", () => {
+    const op = parseOp("style MyShape fill:#ff0000 stroke:#333");
+    if (!isParseError(op)) {
+      expect(op.params.get("fill")).toBe("#ff0000");
+      expect(op.params.get("stroke")).toBe("#333");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("label with quoted colon in text", () => {
+    const op = parseOp('label MyShape "Status: Active"');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("label");
+      expect(op.target).toBe("MyShape");
+      expect(op.params.get("text")).toBe("Status: Active");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("badge with quoted colon in text", () => {
+    const op = parseOp('badge MyShape "v2: stable"');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("badge");
+      expect(op.target).toBe("MyShape");
+      expect(op.params.get("text")).toBe("v2: stable");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("define with quoted colon in name", () => {
+    const op = parseOp('define "svc: payment" base:svc theme:purple');
+    if (!isParseError(op)) {
+      expect(op.verb).toBe("define");
+      expect(op.target).toBe("svc: payment");
+      expect(op.params.get("base")).toBe("svc");
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+
+  it("disconnect with quoted colon refs", () => {
+    const op = parseOp('disconnect "Svc: A" -> "Svc: B"');
+    if (!isParseError(op)) {
+      expect(op.targets).toEqual(["Svc: A", "Svc: B"]);
+    } else {
+      expect.unreachable("should not be a parse error");
+    }
+  });
+});
+
+// ── Empty string target (Fix 3) ──────────────────────────
+
+describe("parseOp — empty string target", () => {
+  it("parses remove with empty string target", () => {
+    const op = parseOp('remove ""');
+    expect(isParseError(op)).toBe(false);
+    if (!isParseError(op)) {
+      expect(op.target).toBe("");
+    }
+  });
+
+  it("parses style with empty string target", () => {
+    const op = parseOp('style "" fill:#ff0000');
+    expect(isParseError(op)).toBe(false);
+    if (!isParseError(op)) {
+      expect(op.target).toBe("");
+      expect(op.params.get("fill")).toBe("#ff0000");
+    }
+  });
+});
+
 // ── Error cases ───────────────────────────────────────────
 
 describe("parseOp — errors", () => {

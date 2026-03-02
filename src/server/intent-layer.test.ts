@@ -1254,3 +1254,158 @@ describe("IntentLayer — style @group: targets container", () => {
     expect(results[0].message).toContain("Unknown group");
   });
 });
+
+// ── Fix 2: Snapshot routing from mutation tool ─────────────
+
+describe("IntentLayer — snapshot via mutation tool", () => {
+  it("routes snapshot to query handler without error", async () => {
+    await layer.executeOps(["add svc A", "add svc B"]);
+    const result = await layer.executeSingleOp("snapshot");
+    expect(result.success).toBe(true);
+    expect(result.message).not.toContain("unknown verb");
+  });
+});
+
+// ── Fix 3: Empty label rejection ───────────────────────────
+
+describe("IntentLayer — empty label", () => {
+  it("rejects add with empty label", async () => {
+    const results = await layer.executeOps(['add svc ""']);
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toContain("empty label");
+  });
+});
+
+// ── Fix 4: Newline label canonicalization ───────────────────
+
+describe("IntentLayer — newline label matching", () => {
+  it("resolves shape with \\n in label via &#10; reference", async () => {
+    await layer.executeOps(['add svc "Container\nRegistry"']);
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.label).toBe("Container\nRegistry");
+
+    // Reference using &#10; form
+    const results = await layer.executeOps(['style "Container&#10;Registry" fill:#ff0000']);
+    expect(results[0].success).toBe(true);
+  });
+});
+
+// ── Fix 5: Label alias ─────────────────────────────────────
+
+describe("IntentLayer — label alias", () => {
+  it("sets alias when label: override is used", async () => {
+    await layer.executeOps(['add svc Ref label:"Display Name"']);
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect(shape.label).toBe("Display Name");
+    expect(shape.alias).toBe("Ref");
+  });
+
+  it("resolves shape by alias", async () => {
+    await layer.executeOps(['add svc Ref label:"Display Name"']);
+    // Style by alias
+    const results = await layer.executeOps(["style Ref fill:#ff0000"]);
+    expect(results[0].success).toBe(true);
+  });
+
+  it("resolves shape by display name too", async () => {
+    await layer.executeOps(['add svc Ref label:"Display Name"']);
+    const results = await layer.executeOps(['style "Display Name" fill:#00ff00']);
+    expect(results[0].success).toBe(true);
+  });
+});
+
+// ── Fix 6: Connect improvements ────────────────────────────
+
+describe("IntentLayer — fractional port positions", () => {
+  beforeEach(async () => {
+    await layer.executeOps(["add svc A", "add svc B"]);
+  });
+
+  it("connects with fractional exit port", async () => {
+    const results = await layer.executeOps([
+      "connect A -> B exit:bottom@0.25 entry:top@0.75",
+    ]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const edge = [...page.edges.values()][0];
+    const style = edge.style as Record<string, unknown>;
+    expect(style["exitX"]).toBe(0.25);
+    expect(style["exitY"]).toBe(1);
+    expect(style["entryX"]).toBe(0.75);
+    expect(style["entryY"]).toBe(0);
+  });
+
+  it("uses default 0.5 fraction when no @ specified", async () => {
+    const results = await layer.executeOps(["connect A -> B exit:bottom entry:top"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const edge = [...page.edges.values()][0];
+    const style = edge.style as Record<string, unknown>;
+    expect(style["exitX"]).toBe(0.5);
+    expect(style["exitY"]).toBe(1);
+  });
+});
+
+// ── Fix 6: Edge style improvements ─────────────────────────
+
+describe("IntentLayer — edge style improvements", () => {
+  beforeEach(async () => {
+    await layer.executeOps(["add svc A", "add svc B"]);
+  });
+
+  it("edge style includes jumpStyle=arc and jumpSize=13", async () => {
+    await layer.executeOps(["connect A -> B"]);
+
+    const { serializeDiagram } = await import("../serialization/serialize.js");
+    const xml = serializeDiagram(layer.model.diagram);
+    expect(xml).toContain("jumpStyle=arc");
+    expect(xml).toContain("jumpSize=13");
+  });
+
+  it("labeled edge includes labelBackgroundColor", async () => {
+    await layer.executeOps(["connect A -> B label:queries"]);
+
+    const { serializeDiagram } = await import("../serialization/serialize.js");
+    const xml = serializeDiagram(layer.model.diagram);
+    expect(xml).toContain("labelBackgroundColor=#FFFFFF");
+  });
+});
+
+// ── Fix 7: Style passthrough ───────────────────────────────
+
+describe("IntentLayer — style passthrough", () => {
+  it("passes through recognized draw.io properties", async () => {
+    await layer.executeOps(["add svc MyShape"]);
+    const results = await layer.executeOps(["style MyShape spacingTop:10"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect((shape.style as Record<string, unknown>)["spacingTop"]).toBe("10");
+  });
+
+  it("passes through container property", async () => {
+    await layer.executeOps(["add svc MyShape"]);
+    const results = await layer.executeOps(["style MyShape container:1"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    expect((shape.style as Record<string, unknown>)["container"]).toBe("1");
+  });
+
+  it("silently ignores properties not in allowlist", async () => {
+    await layer.executeOps(["add svc MyShape"]);
+    const results = await layer.executeOps(["style MyShape fil:#ff0000"]);
+    expect(results[0].success).toBe(true);
+
+    const page = layer.model.getActivePage();
+    const shape = [...page.shapes.values()][0];
+    // "fil" is a typo — not in FCP known keys or passthrough list, so ignored
+    expect((shape.style as Record<string, unknown>)["fil"]).toBeUndefined();
+  });
+});

@@ -20,6 +20,39 @@ import { SessionHandler } from "./session-handler.js";
 import { getStencilPack, listStencilPacks } from "../lib/stencils/index.js";
 import type { StencilEntry } from "../lib/stencils/index.js";
 
+/** draw.io style properties that pass through when not handled by FCP's own keys. */
+const DRAWIO_PASSTHROUGH = new Set([
+  "spacingTop", "spacingBottom", "spacingLeft", "spacingRight", "spacing",
+  "container", "collapsible", "horizontal", "whiteSpace", "overflow",
+  "labelPosition", "verticalLabelPosition", "labelBorderColor", "labelBackgroundColor",
+  "swimlaneLine", "startSize", "arcSize", "perimeterSpacing", "strokeWidth",
+  "exitDx", "exitDy", "entryDx", "entryDy", "fillOpacity",
+  "gradientColor", "gradientDirection", "glass", "aspect",
+]);
+
+/**
+ * Parse a port hint like "bottom", "bottom@0.25", "top@0.75".
+ * Returns [x, y] for draw.io exit/entry coordinates, or null if invalid.
+ *
+ * The face determines the fixed axis (e.g., bottom → y=1),
+ * and the optional @fraction controls position along the face (default 0.5).
+ */
+function parsePortHint(hint: string): [number, number] | null {
+  const atIdx = hint.indexOf("@");
+  const face = atIdx >= 0 ? hint.slice(0, atIdx) : hint;
+  const fraction = atIdx >= 0 ? parseFloat(hint.slice(atIdx + 1)) : 0.5;
+
+  if (isNaN(fraction) || fraction < 0 || fraction > 1) return null;
+
+  switch (face) {
+    case "top":    return [fraction, 0];
+    case "bottom": return [fraction, 1];
+    case "left":   return [0, fraction];
+    case "right":  return [1, fraction];
+    default:       return null;
+  }
+}
+
 export class IntentLayer {
   model: DiagramModel;
   private queryHandler: QueryHandler;
@@ -104,6 +137,14 @@ export class IntentLayer {
   // ── Single op execution ────────────────────────────────
 
   async executeSingleOp(opStr: string): Promise<OpResult> {
+    // Route query commands that users sometimes send through the mutation tool
+    const firstWord = opStr.trim().split(/\s/)[0]?.toLowerCase();
+    if (firstWord === "snapshot") {
+      const result = await this.executeQuery(opStr.trim());
+      const text = typeof result === "string" ? result : result.text;
+      return { success: true, message: text };
+    }
+
     const parsed = parseOp(opStr);
     if (isParseError(parsed)) {
       return { success: false, message: parsed.error };
@@ -277,6 +318,10 @@ export class IntentLayer {
         ? (count > 1 ? `${labelOverride}${i + 1}` : labelOverride)
         : (count > 1 ? `${op.target}${i + 1}` : (op.target ?? "Untitled"));
 
+      if (label === "") {
+        return { success: false, message: 'add: empty label — provide a name or use @recent' };
+      }
+
       const shape = this.model.addShape(label, resolvedType, {
         theme: customThemeColors ? undefined : theme,
         near: nearId,
@@ -295,6 +340,11 @@ export class IntentLayer {
         style.strokeColor = customThemeColors.stroke;
         if (customThemeColors.fontColor) style.fontColor = customThemeColors.fontColor;
         this.model.modifyShape(shape.id, { style });
+      }
+
+      // Set alias when label: overrides the original target
+      if (labelOverride && op.target && op.target !== label) {
+        this.model.modifyShape(shape.id, { alias: op.target });
       }
 
       // Apply badge from custom type
@@ -399,24 +449,23 @@ export class IntentLayer {
         }
       }
 
-      // Port hints: exit:top/bottom/left/right, entry:top/bottom/left/right
+      // Port hints: exit:face[@fraction], entry:face[@fraction]
+      // e.g., exit:bottom, exit:bottom@0.25, entry:top@0.75
       const exitHint = op.params.get("exit");
       const entryHint = op.params.get("entry");
-      const portCoords: Record<string, [number, number]> = {
-        top: [0.5, 0],
-        bottom: [0.5, 1],
-        left: [0, 0.5],
-        right: [1, 0.5],
-      };
-      if (exitHint && portCoords[exitHint]) {
-        const [x, y] = portCoords[exitHint];
-        (edgeStyleOverrides as Record<string, unknown>)["exitX"] = x;
-        (edgeStyleOverrides as Record<string, unknown>)["exitY"] = y;
+      if (exitHint) {
+        const port = parsePortHint(exitHint);
+        if (port) {
+          (edgeStyleOverrides as Record<string, unknown>)["exitX"] = port[0];
+          (edgeStyleOverrides as Record<string, unknown>)["exitY"] = port[1];
+        }
       }
-      if (entryHint && portCoords[entryHint]) {
-        const [x, y] = portCoords[entryHint];
-        (edgeStyleOverrides as Record<string, unknown>)["entryX"] = x;
-        (edgeStyleOverrides as Record<string, unknown>)["entryY"] = y;
+      if (entryHint) {
+        const port = parsePortHint(entryHint);
+        if (port) {
+          (edgeStyleOverrides as Record<string, unknown>)["entryX"] = port[0];
+          (edgeStyleOverrides as Record<string, unknown>)["entryY"] = port[1];
+        }
       }
 
       const edge = this.model.addEdge(srcResult.shape.id, tgtResult.shape.id, {
@@ -548,6 +597,11 @@ export class IntentLayer {
           case "valign":
             group.style.verticalAlign = value;
             break;
+          default:
+            if (DRAWIO_PASSTHROUGH.has(key)) {
+              (group.style as Record<string, unknown>)[key] = value;
+            }
+            break;
         }
       }
       if (groupFontEnable !== 0 || groupFontDisable !== 0) {
@@ -672,6 +726,12 @@ export class IntentLayer {
           break;
         case "valign":
           styleChanges.verticalAlign = value;
+          break;
+        default:
+          // Passthrough: recognized draw.io properties not handled by FCP
+          if (DRAWIO_PASSTHROUGH.has(key)) {
+            (styleChanges as Record<string, unknown>)[key] = value;
+          }
           break;
       }
     }

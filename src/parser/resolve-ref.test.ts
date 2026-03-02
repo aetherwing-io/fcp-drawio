@@ -267,3 +267,54 @@ describe("resolveRef — @connected selector", () => {
     }
   });
 });
+
+// ── Fix 4: Newline label canonicalization ─────────────────
+
+describe("resolveRef — newline canonicalization", () => {
+  it("resolves shape with \\n in label via &#10; reference", () => {
+    model.addShape("Container\nRegistry", "svc");
+    const result = resolve("Container&#10;Registry");
+    expect(result.kind).toBe("single");
+  });
+
+  it("resolves shape with &#10; in label via \\n reference", () => {
+    // Simulate a shape that was deserialized with &#10; in label
+    const shape = model.addShape("Line1&#10;Line2", "svc");
+    const result = resolve("Line1\nLine2");
+    expect(result.kind).toBe("single");
+  });
+});
+
+// ── Fix 5: Alias resolution ──────────────────────────────
+
+describe("resolveRef — alias", () => {
+  it("resolves shape by alias", () => {
+    const shape = model.addShape("Display Name", "svc");
+    model.modifyShape(shape.id, { alias: "Ref" });
+
+    const result = resolve("Ref");
+    expect(result.kind).toBe("single");
+    if (result.kind === "single") {
+      expect(result.shape.label).toBe("Display Name");
+    }
+  });
+
+  it("resolves shape by label when alias exists", () => {
+    const shape = model.addShape("Display Name", "svc");
+    model.modifyShape(shape.id, { alias: "Ref" });
+
+    const result = resolve("Display Name");
+    expect(result.kind).toBe("single");
+  });
+
+  it("alias case-insensitive resolution", () => {
+    const shape = model.addShape("Display Name", "svc");
+    model.modifyShape(shape.id, { alias: "MyRef" });
+
+    const result = resolve("myref");
+    expect(result.kind).toBe("single");
+    if (result.kind === "single") {
+      expect(result.shape.label).toBe("Display Name");
+    }
+  });
+});

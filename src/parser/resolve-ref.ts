@@ -24,6 +24,9 @@ export function resolveRef(ref: string, registry: ReferenceRegistry, model: Diag
     return resolveSelector(ref, registry, model);
   }
 
+  // Canonicalize &#10; → \n so refs match regardless of encoding
+  ref = ref.replace(/&#10;/g, "\n");
+
   // Handle type-qualified references: db:UserDB
   if (ref.includes(":") && !ref.startsWith("#")) {
     const [typeHint, label] = ref.split(":", 2);

@@ -1,5 +1,6 @@
 import type { ParsedOp, Verb, ArrowOperator } from "../types/index.js";
-import { tokenize, isKeyValue, parseKeyValue, isArrow, isSelector } from "./tokenizer.js";
+import type { TokenMeta } from "./tokenizer.js";
+import { tokenizeWithMeta, isKeyValue, parseKeyValue, isArrow, isSelector } from "./tokenizer.js";
 
 const VERBS = new Set<string>([
   "add", "remove", "define", "connect", "disconnect",
@@ -13,21 +14,24 @@ const VERBS = new Set<string>([
  *
  * Every operation follows: VERB [TYPE] TARGET [key:value ...]
  * The verb determines how remaining tokens are interpreted.
+ *
+ * Uses tokenizeWithMeta() so quoted strings containing colons
+ * (e.g., "threshold: 5 seconds") are not misclassified as key:value pairs.
  */
 export function parseOp(input: string): ParsedOp | { error: string; raw: string } {
   const raw = input.trim();
-  const tokens = tokenize(raw);
+  const metas = tokenizeWithMeta(raw);
 
-  if (tokens.length === 0) {
+  if (metas.length === 0) {
     return { error: "empty operation", raw };
   }
 
-  const verb = tokens[0].toLowerCase();
+  const verb = metas[0].text.toLowerCase();
   if (!VERBS.has(verb)) {
-    return { error: `unknown verb "${tokens[0]}"`, raw };
+    return { error: `unknown verb "${metas[0].text}"`, raw };
   }
 
-  const rest = tokens.slice(1);
+  const rest = metas.slice(1);
 
   switch (verb) {
     case "add":
@@ -75,13 +79,18 @@ export function parseOp(input: string): ParsedOp | { error: string; raw: string 
   }
 }
 
+/** Check if a TokenMeta should be treated as a key:value pair (skip if quoted). */
+function isTokenKV(t: TokenMeta): boolean {
+  return !t.wasQuoted && isKeyValue(t.text);
+}
+
 // ── Verb-specific parsers ────────────────────────────────
 
 /**
  * add TYPE LABEL [key:value]*
  * add LABEL [key:value]*  (type inferred from label)
  */
-function parseAdd(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseAdd(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
     return { error: "add requires at least a label", raw };
   }
@@ -89,15 +98,15 @@ function parseAdd(tokens: string[], raw: string): ParsedOp | { error: string; ra
   const params = new Map<string, string>();
   const nonParams: string[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
-    } else if (isSelector(token)) {
+    } else if (isSelector(t.text)) {
       // selector as target
-      nonParams.push(token);
+      nonParams.push(t.text);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 
@@ -127,7 +136,7 @@ function parseAdd(tokens: string[], raw: string): ParsedOp | { error: string; ra
  * define NAME base:TYPE [theme:THEME] [badge:TEXT] [size:WxH]
  * define theme NAME fill:#HEX stroke:#HEX [font-color:#HEX]
  */
-function parseDefine(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseDefine(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
     return { error: "define requires a name", raw };
   }
@@ -135,12 +144,12 @@ function parseDefine(tokens: string[], raw: string): ParsedOp | { error: string;
   const params = new Map<string, string>();
   const nonParams: string[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 
@@ -160,19 +169,19 @@ function parseDefine(tokens: string[], raw: string): ParsedOp | { error: string;
 /**
  * connect REF ARROW REF [ARROW REF]* [key:value]*
  */
-function parseConnect(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseConnect(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   const params = new Map<string, string>();
   const targets: string[] = [];
   const arrows: ArrowOperator[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
-    } else if (isArrow(token)) {
-      arrows.push(token as ArrowOperator);
+    } else if (isArrow(t.text)) {
+      arrows.push(t.text as ArrowOperator);
     } else {
-      targets.push(token);
+      targets.push(t.text);
     }
   }
 
@@ -193,15 +202,15 @@ function parseConnect(tokens: string[], raw: string): ParsedOp | { error: string
 /**
  * disconnect REF ARROW REF
  */
-function parseDisconnect(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseDisconnect(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   const targets: string[] = [];
   const arrows: ArrowOperator[] = [];
 
-  for (const token of tokens) {
-    if (isArrow(token)) {
-      arrows.push(token as ArrowOperator);
-    } else if (!isKeyValue(token)) {
-      targets.push(token);
+  for (const t of tokens) {
+    if (isArrow(t.text)) {
+      arrows.push(t.text as ArrowOperator);
+    } else if (!isTokenKV(t)) {
+      targets.push(t.text);
     }
   }
 
@@ -223,7 +232,7 @@ function parseDisconnect(tokens: string[], raw: string): ParsedOp | { error: str
  * label REF "new text"
  * label SRC -> TGT "new text"
  */
-function parseLabel(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseLabel(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 2) {
     return { error: "label requires REF and text", raw };
   }
@@ -232,14 +241,14 @@ function parseLabel(tokens: string[], raw: string): ParsedOp | { error: string; 
   const nonParams: string[] = [];
   const arrows: ArrowOperator[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
-    } else if (isArrow(token)) {
-      arrows.push(token as ArrowOperator);
+    } else if (isArrow(t.text)) {
+      arrows.push(t.text as ArrowOperator);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 
@@ -277,7 +286,7 @@ function parseLabel(tokens: string[], raw: string): ParsedOp | { error: string; 
 /**
  * badge REF "text" [pos:POSITION]
  */
-function parseBadge(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseBadge(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 2) {
     return { error: "badge requires REF and text", raw };
   }
@@ -285,12 +294,12 @@ function parseBadge(tokens: string[], raw: string): ParsedOp | { error: string; 
   const params = new Map<string, string>();
   const nonParams: string[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 
@@ -311,8 +320,8 @@ function parseBadge(tokens: string[], raw: string): ParsedOp | { error: string; 
 /**
  * swap REF REF
  */
-function parseSwap(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
-  const nonParams = tokens.filter((t) => !isKeyValue(t));
+function parseSwap(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
+  const nonParams = tokens.filter((t) => !isTokenKV(t)).map((t) => t.text);
   if (nonParams.length < 2) {
     return { error: "swap requires two REFs", raw };
   }
@@ -329,16 +338,16 @@ function parseSwap(tokens: string[], raw: string): ParsedOp | { error: string; r
 /**
  * group REF [REF]* as:NAME
  */
-function parseGroup(tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseGroup(tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   const params = new Map<string, string>();
   const targets: string[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
     } else {
-      targets.push(token);
+      targets.push(t.text);
     }
   }
 
@@ -363,7 +372,7 @@ function parseGroup(tokens: string[], raw: string): ParsedOp | { error: string; 
  * Generic: VERB TARGET [key:value]*
  * Used for style, move, resize, layout
  */
-function parseTargetWithParams(verb: Verb, tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseTargetWithParams(verb: Verb, tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
     return { error: `${verb} requires a target`, raw };
   }
@@ -372,22 +381,22 @@ function parseTargetWithParams(verb: Verb, tokens: string[], raw: string): Parse
   let target: string | undefined;
   let selector: string | undefined;
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
-    } else if (isSelector(token) && !target) {
-      target = token;
-      selector = token;
+    } else if (isSelector(t.text) && !target) {
+      target = t.text;
+      selector = t.text;
     } else if (!target) {
-      target = token;
+      target = t.text;
     } else {
       // Bare token after target — treat as boolean flag (e.g., bold, italic, no-bold)
-      params.set(token, "true");
+      params.set(t.text, "true");
     }
   }
 
-  if (!target) {
+  if (target == null) {
     return { error: `${verb} requires a target`, raw };
   }
 
@@ -404,7 +413,7 @@ function parseTargetWithParams(verb: Verb, tokens: string[], raw: string): Parse
  * Generic simple target: VERB TARGET
  * Used for remove, ungroup, checkpoint, title
  */
-function parseSimpleTarget(verb: Verb, tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseSimpleTarget(verb: Verb, tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
     return { error: `${verb} requires a target`, raw };
   }
@@ -413,17 +422,17 @@ function parseSimpleTarget(verb: Verb, tokens: string[], raw: string): ParsedOp 
   const params = new Map<string, string>();
   const nonParams: string[] = [];
 
-  for (const token of tokens) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of tokens) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 
   const target = nonParams[0];
-  if (!target) {
+  if (target == null) {
     return { error: `${verb} requires a target`, raw };
   }
 
@@ -440,22 +449,22 @@ function parseSimpleTarget(verb: Verb, tokens: string[], raw: string): ParsedOp 
  * Subcommand: VERB SUBCOMMAND [args]*
  * Used for page and layer operations.
  */
-function parseSubcommand(verb: Verb, tokens: string[], raw: string): ParsedOp | { error: string; raw: string } {
+function parseSubcommand(verb: Verb, tokens: TokenMeta[], raw: string): ParsedOp | { error: string; raw: string } {
   if (tokens.length < 1) {
     return { error: `${verb} requires a subcommand`, raw };
   }
 
-  const subcommand = tokens[0].toLowerCase();
+  const subcommand = tokens[0].text.toLowerCase();
   const rest = tokens.slice(1);
   const params = new Map<string, string>();
   const nonParams: string[] = [];
 
-  for (const token of rest) {
-    if (isKeyValue(token)) {
-      const { key, value } = parseKeyValue(token);
+  for (const t of rest) {
+    if (isTokenKV(t)) {
+      const { key, value } = parseKeyValue(t.text);
       params.set(key, value);
     } else {
-      nonParams.push(token);
+      nonParams.push(t.text);
     }
   }
 

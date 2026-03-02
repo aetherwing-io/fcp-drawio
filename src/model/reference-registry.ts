@@ -8,6 +8,7 @@ export class ReferenceRegistry {
   private byId = new Map<string, Shape>();
   private byLabel = new Map<string, Shape[]>();
   private byLabelNormalized = new Map<string, Shape[]>();
+  private byAlias = new Map<string, Shape[]>();
   private byType = new Map<string, Shape[]>();
   private byGroup = new Map<string, Shape[]>();
   private byLayer = new Map<string, Shape[]>();
@@ -18,6 +19,7 @@ export class ReferenceRegistry {
     this.byId.clear();
     this.byLabel.clear();
     this.byLabelNormalized.clear();
+    this.byAlias.clear();
     this.byType.clear();
     this.byGroup.clear();
     this.byLayer.clear();
@@ -31,16 +33,30 @@ export class ReferenceRegistry {
     for (const shape of shapes) {
       this.byId.set(shape.id, shape);
 
-      // by exact label
-      const labelList = this.byLabel.get(shape.label) ?? [];
+      // by exact label (canonicalized for &#10; → \n consistency)
+      const canon = canonLabel(shape.label);
+      const labelList = this.byLabel.get(canon) ?? [];
       labelList.push(shape);
-      this.byLabel.set(shape.label, labelList);
+      this.byLabel.set(canon, labelList);
 
       // by normalized label (lowercase, strip hyphens/underscores/spaces)
       const normalized = normalizeLabel(shape.label);
       const normList = this.byLabelNormalized.get(normalized) ?? [];
       normList.push(shape);
       this.byLabelNormalized.set(normalized, normList);
+
+      // by alias (original target when label: override was used)
+      if (shape.alias) {
+        const aliasList = this.byAlias.get(shape.alias) ?? [];
+        aliasList.push(shape);
+        this.byAlias.set(shape.alias, aliasList);
+
+        // Also index alias in normalized map for fuzzy matching
+        const normalizedAlias = normalizeLabel(shape.alias);
+        const normAliasList = this.byLabelNormalized.get(normalizedAlias) ?? [];
+        normAliasList.push(shape);
+        this.byLabelNormalized.set(normalizedAlias, normAliasList);
+      }
 
       // by type
       const typeList = this.byType.get(shape.type) ?? [];
@@ -74,15 +90,32 @@ export class ReferenceRegistry {
   }
 
   getByExactLabel(label: string): Shape[] {
-    return this.byLabel.get(label) ?? [];
+    const canon = canonLabel(label);
+    const byLabel = this.byLabel.get(canon) ?? [];
+    const byAlias = this.byAlias.get(canon) ?? [];
+    if (byAlias.length === 0) return byLabel;
+    if (byLabel.length === 0) return byAlias;
+    // Deduplicate by id
+    const seen = new Set(byLabel.map(s => s.id));
+    return [...byLabel, ...byAlias.filter(s => !seen.has(s.id))];
   }
 
   getByCaseInsensitiveLabel(label: string): Shape[] {
-    const lower = label.toLowerCase();
+    const lower = canonLabel(label).toLowerCase();
     const results: Shape[] = [];
+    const seen = new Set<string>();
     for (const [key, shapes] of this.byLabel) {
       if (key.toLowerCase() === lower) {
-        results.push(...shapes);
+        for (const s of shapes) {
+          if (!seen.has(s.id)) { seen.add(s.id); results.push(s); }
+        }
+      }
+    }
+    for (const [key, shapes] of this.byAlias) {
+      if (key.toLowerCase() === lower) {
+        for (const s of shapes) {
+          if (!seen.has(s.id)) { seen.add(s.id); results.push(s); }
+        }
       }
     }
     return results;
@@ -93,7 +126,7 @@ export class ReferenceRegistry {
   }
 
   getByPrefixLabel(prefix: string): Shape[] {
-    const lower = prefix.toLowerCase();
+    const lower = canonLabel(prefix).toLowerCase();
     const results: Shape[] = [];
     for (const [key, shapes] of this.byLabel) {
       if (key.toLowerCase().startsWith(lower)) {
@@ -159,9 +192,17 @@ export class ReferenceRegistry {
 }
 
 /**
+ * Canonicalize XML entity &#10; to actual newline for consistent matching.
+ * draw.io serializes \n as &#10; but LLMs may reference with either form.
+ */
+function canonLabel(s: string): string {
+  return s.replace(/&#10;/g, "\n");
+}
+
+/**
  * Normalize a label for fuzzy matching:
- * lowercase, strip hyphens, underscores, spaces.
+ * lowercase, strip hyphens, underscores, spaces, canonicalize &#10;.
  */
 function normalizeLabel(label: string): string {
-  return label.toLowerCase().replace(/[-_\s]/g, "");
+  return canonLabel(label).toLowerCase().replace(/[-_\s]/g, "");
 }

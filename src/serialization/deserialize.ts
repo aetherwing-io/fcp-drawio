@@ -372,6 +372,9 @@ function processCells(cells: RawCell[]): {
         }
       }
 
+      // Read alias from fcp-alias attribute (round-trip for label: overrides)
+      const alias = cell["@_fcp-alias"] as string | undefined;
+
       shapes.set(id, {
         id,
         label: cell["@_value"] || "",
@@ -382,6 +385,7 @@ function processCells(cells: RawCell[]): {
         layer: layer || defaultLayer,
         metadata: {},
         baseStyleOverride,
+        alias: alias || undefined,
         createdAt: seq,
         modifiedAt: seq++,
       });

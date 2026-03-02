@@ -126,6 +126,7 @@ export interface Shape {
   layer: string;
   metadata: ShapeMetadata;
   baseStyleOverride?: string;  // full draw.io style string from stencil packs
+  alias?: string;  // Original target when label: override was used
   createdAt: number;
   modifiedAt: number;
 }

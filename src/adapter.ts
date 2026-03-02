@@ -72,18 +72,8 @@ export class DrawioAdapter implements FcpDomainAdapter<DiagramModel, DiagramEven
 
   async dispatchQuery(query: string, _model: DiagramModel): Promise<string | QueryResult> {
     const result = this.intent.executeQuery(query);
-    // Handle async results (e.g., snapshot rendering)
-    if (result instanceof Promise) {
-      const resolved = await result;
-      // Map the internal QueryResult to fcp-core's QueryResult
-      if (typeof resolved === "string") return resolved;
-      const qr = resolved as { text: string; image?: { base64: string; mimeType: string } };
-      return qr;
-    }
     if (typeof result === "string") return result;
-    // Map the internal QueryResult to fcp-core's QueryResult
-    const qr = result as { text: string; image?: { base64: string; mimeType: string } };
-    return qr;
+    return result as { text: string; image?: { base64: string; mimeType: string } };
   }
 
   reverseEvent(event: DiagramEvent, model: DiagramModel): void {

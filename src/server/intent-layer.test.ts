@@ -1255,14 +1255,14 @@ describe("IntentLayer — style @group: targets container", () => {
   });
 });
 
-// ── Fix 2: Snapshot routing from mutation tool ─────────────
+// ── Fix 2: Export verb via mutation tool ────────────────────
 
-describe("IntentLayer — snapshot via mutation tool", () => {
-  it("routes snapshot to query handler without error", async () => {
-    await layer.executeOps(["add svc A", "add svc B"]);
-    const result = await layer.executeSingleOp("snapshot");
-    expect(result.success).toBe(true);
-    expect(result.message).not.toContain("unknown verb");
+describe("IntentLayer — export via mutation tool", () => {
+  it("export on empty diagram returns error", async () => {
+    const fresh = new IntentLayer();
+    const result = await fresh.executeSingleOp("export");
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("empty");
   });
 });
 

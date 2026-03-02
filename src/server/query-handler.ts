@@ -1,28 +1,21 @@
 import type { Shape } from "../types/index.js";
-import type { SnapshotResult } from "../lib/drawio-cli.js";
-import { renderSnapshot } from "../lib/drawio-cli.js";
 import { DiagramModel } from "../model/diagram-model.js";
 import { resolveRef } from "../parser/resolve-ref.js";
-import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
+import { tokenize } from "../parser/tokenizer.js";
 import {
   formatList, formatConnections, formatDescribe, formatStats,
   formatStatus, formatHistory, formatMap,
 } from "./response-formatter.js";
-import { serializeDiagram } from "../serialization/serialize.js";
 
 export interface QueryResult {
   text: string;
-  image?: SnapshotResult;
+  image?: { base64: string; mimeType: string };
 }
 
 export class QueryHandler {
-  private drawioCliPath: string | null;
+  constructor(private model: DiagramModel) {}
 
-  constructor(private model: DiagramModel, drawioCliPath: string | null = null) {
-    this.drawioCliPath = drawioCliPath;
-  }
-
-  dispatch(query: string): string | QueryResult | Promise<QueryResult> {
+  dispatch(query: string): string | QueryResult {
     const tokens = tokenize(query);
     if (tokens.length === 0) return "Empty query";
 
@@ -38,7 +31,6 @@ export class QueryHandler {
       case "find": return this.queryFind(tokens.slice(1));
       case "diff": return this.queryDiff(tokens.slice(1));
       case "history": return this.queryHistory(tokens.slice(1));
-      case "snapshot": return this.querySnapshot(tokens.slice(1));
       default: return `Unknown query command "${cmd}"`;
     }
   }
@@ -121,50 +113,4 @@ export class QueryHandler {
     return formatHistory(events);
   }
 
-  private querySnapshot(args: string[]): string | Promise<QueryResult> {
-    // Parse arguments first so we know which page is being requested
-    let width = 1200;
-    let pageNum = 1;
-    for (const arg of args) {
-      if (isKeyValue(arg)) {
-        const { key, value } = parseKeyValue(arg);
-        if (key === "width") width = parseInt(value, 10) || 1200;
-        if (key === "page") pageNum = parseInt(value, 10) || 1;
-      }
-    }
-
-    // Validate page number and get the requested page
-    const pages = this.model.diagram.pages;
-    if (pageNum < 1 || pageNum > pages.length) {
-      return `snapshot: invalid page ${pageNum} — diagram has ${pages.length} page(s)`;
-    }
-    const requestedPage = pages[pageNum - 1];
-
-    if (requestedPage.shapes.size === 0) {
-      return "snapshot: empty diagram — add shapes first";
-    }
-
-    if (!this.drawioCliPath) {
-      return "snapshot unavailable: draw.io desktop app not found. Install from https://drawio.com for visual review. Use 'map' query for text-based spatial summary.";
-    }
-
-    const xml = serializeDiagram(this.model.diagram);
-
-    return renderSnapshot({
-      cliPath: this.drawioCliPath,
-      diagramXml: xml,
-      width,
-      page: pageNum,
-    }).then((image) => {
-      const pageCount = pages.length;
-      const shapeCount = requestedPage.shapes.size;
-      const edgeCount = requestedPage.edges.size;
-      const groupCount = requestedPage.groups.size;
-      const sizeKB = Math.round(image.sizeBytes / 1024);
-      return {
-        text: `snapshot: ${image.width}px ${sizeKB}KB [${shapeCount}s ${edgeCount}e ${groupCount}g p:${pageNum}/${pageCount}]`,
-        image,
-      } as QueryResult;
-    });
-  }
 }

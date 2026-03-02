@@ -40,46 +40,64 @@ export function detectDrawioCLI(): string | null {
   return null;
 }
 
-export interface SnapshotOptions {
+export type ExportFormat = "png" | "svg" | "pdf";
+
+export interface ExportOptions {
   cliPath: string;
   diagramXml: string;
-  width?: number;  // default 1200
-  page?: number;   // 1-based, default 1
+  format?: ExportFormat;    // default "png"
+  width?: number;           // default 1200
+  height?: number;          // optional, auto-aspect if omitted
+  page?: number;            // 1-based, default 1
+  outputPath?: string;      // if set, persist to this path
 }
 
-export interface SnapshotResult {
+const MIME_TYPES: Record<ExportFormat, string> = {
+  png: "image/png",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+};
+
+export interface ExportResult {
   base64: string;
-  mimeType: "image/png";
+  mimeType: string;
   width: number;
   sizeBytes: number;
+  filePath?: string;        // set when outputPath was provided
 }
 
 /**
- * Render a diagram to PNG via draw.io CLI.
+ * Render a diagram to PNG/SVG/PDF via draw.io CLI.
  * Writes temp files, exports, reads result, cleans up.
  */
-export async function renderSnapshot(options: SnapshotOptions): Promise<SnapshotResult> {
-  const { cliPath, diagramXml, width = 1200, page = 1 } = options;
+export async function renderExport(options: ExportOptions): Promise<ExportResult> {
+  const { cliPath, diagramXml, format = "png", width = 1200, height, page = 1, outputPath } = options;
   const id = randomBytes(6).toString("hex");
-  const inputPath = join(tmpdir(), `drawio-snapshot-${id}.drawio`);
-  const outputPath = join(tmpdir(), `drawio-snapshot-${id}.png`);
+  const inputPath = join(tmpdir(), `drawio-export-${id}.drawio`);
+  const destPath = outputPath ?? join(tmpdir(), `drawio-export-${id}.${format}`);
+  const needsCleanup = !outputPath; // only clean up temp output, not user-specified path
 
   try {
     writeFileSync(inputPath, diagramXml, "utf-8");
 
+    const args = [
+      "--export",
+      "--format", format,
+      "--width", String(width),
+      "--crop",
+      "--border", "10",
+      "--page-index", String(page), // CLI is 1-based, same as our API
+      "--output", destPath,
+      inputPath,
+    ];
+    if (height !== undefined) {
+      args.splice(args.indexOf("--crop"), 0, "--height", String(height));
+    }
+
     await new Promise<void>((resolve, reject) => {
       execFile(
         cliPath,
-        [
-          "--export",
-          "--format", "png",
-          "--width", String(width),
-          "--crop",
-          "--border", "10",
-          "--page-index", String(page), // CLI is 1-based, same as our API
-          "--output", outputPath,
-          inputPath,
-        ],
+        args,
         { timeout: 15_000 },
         (error) => {
           if (error) reject(new Error(`draw.io export failed: ${error.message}`));
@@ -88,17 +106,20 @@ export async function renderSnapshot(options: SnapshotOptions): Promise<Snapshot
       );
     });
 
-    const pngBuffer = readFileSync(outputPath);
-    const base64 = pngBuffer.toString("base64");
+    const outputBuffer = readFileSync(destPath);
+    const base64 = outputBuffer.toString("base64");
 
     return {
       base64,
-      mimeType: "image/png",
+      mimeType: MIME_TYPES[format],
       width,
-      sizeBytes: pngBuffer.length,
+      sizeBytes: outputBuffer.length,
+      filePath: outputPath ?? undefined,
     };
   } finally {
     try { unlinkSync(inputPath); } catch { /* cleaned up */ }
-    try { unlinkSync(outputPath); } catch { /* cleaned up */ }
+    if (needsCleanup) {
+      try { unlinkSync(destPath); } catch { /* cleaned up */ }
+    }
   }
 }

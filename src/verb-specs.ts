@@ -151,10 +151,10 @@ export const DRAWIO_VERB_SPECS: VerbSpec[] = [
 
   // ── Visual ──────────────────────────────────────────────────
   {
-    verb: "snapshot",
-    syntax: "snapshot [width:N] [page:N]",
+    verb: "export",
+    syntax: "export [inline|file] [fmt:png|svg|pdf] [width:N] [height:N] [page:N] [as:PATH]",
     category: "visual",
-    params: ["width", "page"],
-    description: "Render diagram to PNG (also works via drawio_query)",
+    params: ["fmt", "width", "height", "page", "as"],
+    description: "Export diagram to PNG/SVG/PDF, inline or to file",
   },
 ];

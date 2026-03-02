@@ -20,7 +20,7 @@ export function createServer(): { server: McpServer; intent: IntentLayer } {
     adapter,
     verbs: DRAWIO_VERB_SPECS,
     referenceCard: {
-      sections: buildReferenceCardSections(drawioCliPath !== null),
+      sections: buildReferenceCardSections(),
     },
   });
 

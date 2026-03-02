@@ -1,6 +1,6 @@
 {
   "name": "@aetherwing/fcp-drawio",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "MCP server for creating and editing draw.io diagrams through intent-level commands",
   "type": "module",
   "main": "dist/index.js",

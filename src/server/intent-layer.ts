@@ -19,6 +19,11 @@ import type { QueryResult } from "./query-handler.js";
 import { SessionHandler } from "./session-handler.js";
 import { getStencilPack, listStencilPacks } from "../lib/stencils/index.js";
 import type { StencilEntry } from "../lib/stencils/index.js";
+import { renderExport } from "../lib/drawio-cli.js";
+import type { ExportFormat } from "../lib/drawio-cli.js";
+import { serializeDiagram } from "../serialization/serialize.js";
+import { tokenize, isKeyValue, parseKeyValue } from "../parser/tokenizer.js";
+import { resolve, dirname } from "node:path";
 
 /** draw.io style properties that pass through when not handled by FCP's own keys. */
 const DRAWIO_PASSTHROUGH = new Set([
@@ -64,7 +69,7 @@ export class IntentLayer {
   constructor(options?: { drawioCliPath?: string | null }) {
     this.model = new DiagramModel();
     this.drawioCliPath = options?.drawioCliPath ?? null;
-    this.queryHandler = new QueryHandler(this.model, this.drawioCliPath);
+    this.queryHandler = new QueryHandler(this.model);
     this.sessionHandler = new SessionHandler(this.model);
   }
 
@@ -106,7 +111,7 @@ export class IntentLayer {
     return results;
   }
 
-  executeQuery(query: string): string | QueryResult | Promise<QueryResult> {
+  executeQuery(query: string): string | QueryResult {
     try {
       return this.queryHandler.dispatch(query.trim());
     } catch (err: unknown) {
@@ -130,25 +135,15 @@ export class IntentLayer {
       this.model.diagram.customTypes,
       this.model.diagram.customThemes,
       this.model.diagram.loadedStencilPacks,
-      this.drawioCliPath !== null,
     );
   }
 
   // ── Single op execution ────────────────────────────────
 
   async executeSingleOp(opStr: string): Promise<OpResult> {
-    // Route query commands that users sometimes send through the mutation tool
     const firstWord = opStr.trim().split(/\s/)[0]?.toLowerCase();
-    if (firstWord === "snapshot") {
-      const result = await this.executeQuery(opStr.trim());
-      if (typeof result === "string") {
-        return { success: true, message: result };
-      }
-      const opResult: OpResult = { success: true, message: result.text };
-      if (result.image) {
-        opResult.image = { base64: result.image.base64, mimeType: result.image.mimeType };
-      }
-      return opResult;
+    if (firstWord === "export") {
+      return this.executeExport(opStr.trim());
     }
 
     const parsed = parseOp(opStr);
@@ -162,6 +157,122 @@ export class IntentLayer {
       return {
         success: false,
         message: `Error executing "${parsed.verb}": ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  private async executeExport(opStr: string): Promise<OpResult> {
+    const tokens = tokenize(opStr);
+    // tokens[0] is "export"
+
+    // Parse params
+    let format: ExportFormat = "png";
+    let width = 1200;
+    let height: number | undefined;
+    let pageNum = 1;
+    let outputPath: string | undefined;
+    let fileMode = false;
+
+    for (const token of tokens.slice(1)) {
+      const lower = token.toLowerCase();
+      if (lower === "file") {
+        fileMode = true;
+        continue;
+      }
+      if (lower === "inline") continue; // default, no-op
+
+      if (isKeyValue(token)) {
+        const { key, value } = parseKeyValue(token);
+        switch (key) {
+          case "fmt": {
+            const f = value.toLowerCase();
+            if (f !== "png" && f !== "svg" && f !== "pdf") {
+              return { success: false, message: `export: unsupported format "${value}" — use png, svg, or pdf` };
+            }
+            format = f;
+            break;
+          }
+          case "width": width = parseInt(value, 10) || 1200; break;
+          case "height": height = parseInt(value, 10) || undefined; break;
+          case "page": pageNum = parseInt(value, 10) || 1; break;
+          case "as":
+            outputPath = value;
+            fileMode = true; // as: implies file mode
+            break;
+        }
+      }
+    }
+
+    // Validate page
+    const pages = this.model.diagram.pages;
+    if (pageNum < 1 || pageNum > pages.length) {
+      return { success: false, message: `export: invalid page ${pageNum} — diagram has ${pages.length} page(s)` };
+    }
+    const requestedPage = pages[pageNum - 1];
+
+    if (requestedPage.shapes.size === 0) {
+      return { success: false, message: "export: empty diagram — add shapes first" };
+    }
+
+    if (!this.drawioCliPath) {
+      return { success: false, message: "export unavailable: draw.io desktop app not found. Install from https://drawio.com for visual review. Use 'map' query for text-based spatial summary." };
+    }
+
+    // Resolve relative outputPath against the session file directory or cwd
+    let resolvedOutputPath: string | undefined;
+    if (outputPath) {
+      const baseDir = this.model.diagram.filePath
+        ? dirname(this.model.diagram.filePath)
+        : process.cwd();
+      resolvedOutputPath = resolve(baseDir, outputPath);
+    }
+
+    const xml = serializeDiagram(this.model.diagram);
+
+    try {
+      const result = await renderExport({
+        cliPath: this.drawioCliPath,
+        diagramXml: xml,
+        format,
+        width,
+        height,
+        page: pageNum,
+        outputPath: resolvedOutputPath,
+      });
+
+      const sizeKB = Math.round(result.sizeBytes / 1024);
+      const pageCount = pages.length;
+      const shapeCount = requestedPage.shapes.size;
+      const edgeCount = requestedPage.edges.size;
+      const groupCount = requestedPage.groups.size;
+      const stats = `[${shapeCount}s ${edgeCount}e ${groupCount}g p:${pageNum}/${pageCount}]`;
+
+      if (fileMode && resolvedOutputPath) {
+        return {
+          success: true,
+          message: `+ exported ${outputPath} (${sizeKB}KB ${format.toUpperCase()} ${width}px ${stats})`,
+        };
+      }
+
+      // Inline SVG: return text content (SVG is text-based)
+      if (format === "svg") {
+        const svgText = Buffer.from(result.base64, "base64").toString("utf-8");
+        return {
+          success: true,
+          message: svgText,
+        };
+      }
+
+      // Inline PNG/PDF: return image
+      return {
+        success: true,
+        message: `export: ${width}px ${sizeKB}KB ${format.toUpperCase()} ${stats}`,
+        image: { base64: result.base64, mimeType: result.mimeType },
+      };
+    } catch (err: unknown) {
+      return {
+        success: false,
+        message: `export failed: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   }

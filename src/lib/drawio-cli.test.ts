@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectDrawioCLI, renderSnapshot } from "./drawio-cli.js";
+import { detectDrawioCLI, renderExport } from "./drawio-cli.js";
 
 describe("detectDrawioCLI", () => {
   it("returns a string path or null", () => {
@@ -19,7 +19,7 @@ describe("detectDrawioCLI", () => {
 
 const cliPath = detectDrawioCLI();
 
-describe("renderSnapshot", () => {
+describe("renderExport", () => {
   it.skipIf(!cliPath)("renders a minimal diagram to PNG base64", async () => {
     const minimalXml = `<?xml version="1.0" encoding="UTF-8"?>
 <mxfile>
@@ -36,7 +36,7 @@ describe("renderSnapshot", () => {
   </diagram>
 </mxfile>`;
 
-    const result = await renderSnapshot({
+    const result = await renderExport({
       cliPath: cliPath!,
       diagramXml: minimalXml,
       width: 800,
@@ -66,7 +66,7 @@ describe("renderSnapshot", () => {
   </diagram>
 </mxfile>`;
 
-    const result = await renderSnapshot({
+    const result = await renderExport({
       cliPath: cliPath!,
       diagramXml: twoPageXml,
       page: 2,
@@ -77,7 +77,7 @@ describe("renderSnapshot", () => {
 
   it("rejects with error for invalid CLI path", async () => {
     await expect(
-      renderSnapshot({
+      renderExport({
         cliPath: "/nonexistent/drawio",
         diagramXml: "<mxfile></mxfile>",
       })

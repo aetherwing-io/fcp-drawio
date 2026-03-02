@@ -87,14 +87,14 @@ describe("DrawioAdapter", () => {
     expect(page.shapes.size).toBe(1);
   });
 
-  it("dispatchQuery() handles async snapshot gracefully", async () => {
+  it("dispatchQuery() returns unknown for removed snapshot query", async () => {
     const adapter = new DrawioAdapter();
     adapter.createEmpty("Test", {});
 
-    // Without drawio CLI, snapshot should return an availability message
+    // snapshot query was removed — should return unknown command
     const result = await adapter.dispatchQuery("snapshot", adapter.intentLayer.model);
     expect(typeof result).toBe("string");
-    expect(result as string).toContain("snapshot");
+    expect(result as string).toContain("Unknown query command");
   });
 
   it("reverseEvent() undoes a shape creation", () => {

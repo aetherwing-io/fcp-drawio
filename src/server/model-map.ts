@@ -144,10 +144,13 @@ CHECKPOINT
 TITLE
   title "Diagram Title"
 
-SNAPSHOT
-  snapshot                           render diagram to PNG (works via drawio or drawio_query)
-  snapshot width:800                 custom width (default 1200)
-  snapshot page:2                    specific page (1-based)
+EXPORT
+  export                             render diagram to PNG for visual review
+  export width:800                   custom width (default 1200)
+  export fmt:svg                     export as SVG
+  export fmt:pdf as:./out.pdf        save PDF to disk
+  export file as:./diagram.png       save PNG to file
+  export page:2                      specific page (1-based)
 
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
@@ -173,7 +176,7 @@ const MODEL_MAP_BASE = buildModelMap();
  * Used by createFcpServer() to append drawio-specific reference material
  * after the verb listing.
  */
-export function buildReferenceCardSections(snapshotAvailable: boolean): Record<string, string> {
+export function buildReferenceCardSections(): Record<string, string> {
   const sections: Record<string, string> = {};
 
   sections["Node Types"] = generateNodeTypesSection();
@@ -204,7 +207,6 @@ export function getModelMap(
   customTypes: Map<string, CustomType>,
   customThemes?: Map<string, CustomTheme>,
   loadedStencilPacks?: Set<string>,
-  snapshotAvailable?: boolean,
 ): string {
   let result = MODEL_MAP_BASE;
 

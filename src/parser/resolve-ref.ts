@@ -28,16 +28,23 @@ export function resolveRef(ref: string, registry: ReferenceRegistry, model: Diag
   ref = ref.replace(/&#10;/g, "\n");
 
   // Handle type-qualified references: db:UserDB
+  // Only split at colon when the left side looks like a type identifier
+  // (no whitespace). Labels with colons like "threshold: 5 seconds" must
+  // NOT be split — the space after the colon distinguishes them.
   if (ref.includes(":") && !ref.startsWith("#")) {
-    const [typeHint, label] = ref.split(":", 2);
-    const byType = registry.getByType(typeHint);
-    const match = byType.filter((s) => s.label === label);
-    if (match.length === 1) return { kind: "single", shape: match[0] };
-    if (match.length > 1) {
-      return { kind: "multiple", shapes: match, message: `"${ref}" matches ${match.length} shapes` };
+    const colonIdx = ref.indexOf(":");
+    const typeHint = ref.slice(0, colonIdx);
+    const label = ref.slice(colonIdx + 1);
+    if (typeHint.length > 0 && !/\s/.test(typeHint) && !label.startsWith(" ")) {
+      const byType = registry.getByType(typeHint);
+      const match = byType.filter((s) => s.label === label);
+      if (match.length === 1) return { kind: "single", shape: match[0] };
+      if (match.length > 1) {
+        return { kind: "multiple", shapes: match, message: `"${ref}" matches ${match.length} shapes` };
+      }
+      // Fall through to normal resolution with just the label part
+      return resolveRef(label, registry, model);
     }
-    // Fall through to normal resolution with just the label part
-    return resolveRef(label, registry, model);
   }
 
   // Handle group-qualified references: Backend/AuthService

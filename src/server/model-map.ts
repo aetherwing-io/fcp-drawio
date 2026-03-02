@@ -144,6 +144,11 @@ CHECKPOINT
 TITLE
   title "Diagram Title"
 
+SNAPSHOT
+  snapshot                           render diagram to PNG (works via drawio or drawio_query)
+  snapshot width:800                 custom width (default 1200)
+  snapshot page:2                    specific page (1-based)
+
 SELECTORS: @type:TYPE, @group:NAME, @connected:REF, @recent, @recent:N,
            @all, @orphan, @page:NAME, @layer:NAME
 

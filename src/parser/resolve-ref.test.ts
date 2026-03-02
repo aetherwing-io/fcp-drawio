@@ -105,6 +105,36 @@ describe("resolveRef — type-qualified", () => {
   });
 });
 
+describe("resolveRef — colon in labels (not type-qualified)", () => {
+  it("resolves label containing colon followed by space", () => {
+    model.addShape("threshold: 5 seconds", "svc");
+    const result = resolve("threshold: 5 seconds");
+    expect(result.kind).toBe("single");
+    if (result.kind === "single") {
+      expect(result.shape.label).toBe("threshold: 5 seconds");
+    }
+  });
+
+  it("resolves label with colon in middle of text", () => {
+    model.addShape("Service: Auth", "svc");
+    const result = resolve("Service: Auth");
+    expect(result.kind).toBe("single");
+    if (result.kind === "single") {
+      expect(result.shape.label).toBe("Service: Auth");
+    }
+  });
+
+  it("still resolves type:label when type is an identifier", () => {
+    model.addShape("Cache", "svc");
+    model.addShape("Cache", "db");
+    const result = resolve("db:Cache");
+    expect(result.kind).toBe("single");
+    if (result.kind === "single") {
+      expect(result.shape.type).toBe("db");
+    }
+  });
+});
+
 describe("resolveRef — group-qualified", () => {
   it("resolves group/label", () => {
     const s1 = model.addShape("Service", "svc");

@@ -1409,3 +1409,34 @@ describe("IntentLayer — style passthrough", () => {
     expect((shape.style as Record<string, unknown>)["fil"]).toBeUndefined();
   });
 });
+
+// ── Colon in shape references ─────────────────────────────
+
+describe("IntentLayer — colon in shape labels", () => {
+  it("style resolves shape with colon in label", async () => {
+    await layer.executeOps(['add svc "threshold: 5 seconds"']);
+    const results = await layer.executeOps(['style "threshold: 5 seconds" bold']);
+    expect(results[0].success).toBe(true);
+  });
+
+  it("connect resolves shapes with colons in labels", async () => {
+    await layer.executeOps([
+      'add svc "Service: Auth"',
+      'add db "Service: DB"',
+    ]);
+    const results = await layer.executeOps(['connect "Service: Auth" -> "Service: DB"']);
+    expect(results[0].success).toBe(true);
+  });
+
+  it("remove resolves shape with colon in label", async () => {
+    await layer.executeOps(['add svc "threshold: 5 seconds"']);
+    const results = await layer.executeOps(['remove "threshold: 5 seconds"']);
+    expect(results[0].success).toBe(true);
+  });
+
+  it("move resolves shape with colon in label", async () => {
+    await layer.executeOps(['add svc "Config: Redis"']);
+    const results = await layer.executeOps(['move "Config: Redis" to:200,200']);
+    expect(results[0].success).toBe(true);
+  });
+});

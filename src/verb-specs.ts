@@ -148,4 +148,13 @@ export const DRAWIO_VERB_SPECS: VerbSpec[] = [
     params: [],
     description: "Load a stencil pack (aws, azure, gcp, k8s, cisco, ibm)",
   },
+
+  // ── Visual ──────────────────────────────────────────────────
+  {
+    verb: "snapshot",
+    syntax: "snapshot [width:N] [page:N]",
+    category: "visual",
+    params: ["width", "page"],
+    description: "Render diagram to PNG (also works via drawio_query)",
+  },
 ];

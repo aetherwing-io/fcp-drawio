@@ -197,12 +197,6 @@ export function buildReferenceCardSections(snapshotAvailable: boolean): Record<s
   - All XML structure, IDs, and geometry handled by the tool
   - Call drawio_help for full reference with examples`;
 
-  if (snapshotAvailable) {
-    sections["Snapshot"] = `  snapshot                           render diagram to PNG for visual review
-  snapshot width:800                 custom width (default 1200)
-  snapshot page:2                    specific page (1-based)`;
-  }
-
   return sections;
 }
 
@@ -240,13 +234,6 @@ export function getModelMap(
 
       result += `\n\nSTENCILS (${packId}):\n` + catLines.join("\n");
     }
-  }
-
-  if (snapshotAvailable) {
-    result += `\n\nSNAPSHOT:
-  snapshot                           render diagram to PNG for visual review
-  snapshot width:800                 custom width (default 1200)
-  snapshot page:2                    specific page (1-based)`;
   }
 
   if (customThemes && customThemes.size > 0) {

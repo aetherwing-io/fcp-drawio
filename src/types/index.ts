@@ -297,6 +297,7 @@ export interface OpResult {
   message: string;
   warnings?: string[];
   suggestion?: string;  // corrected operation string the LLM can retry
+  image?: { base64: string; mimeType: string };
 }
 
 // ── Node Type Definition ─────────────────────────────────────

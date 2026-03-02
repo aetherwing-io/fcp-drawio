@@ -62,14 +62,15 @@ describe("mcp response format", () => {
 });
 
 describe("model-map snapshot advertising", () => {
-  it("shows SNAPSHOT section in help when CLI detected", () => {
+  it("shows SNAPSHOT in OPERATIONS section", () => {
     const help = getModelMap(new Map(), undefined, undefined, true);
-    expect(help).toContain("SNAPSHOT:");
+    expect(help).toContain("SNAPSHOT\n");
+    expect(help).toContain("snapshot");
   });
 
-  it("does NOT show SNAPSHOT section in help when CLI not detected", () => {
+  it("shows SNAPSHOT even when CLI not detected (verb always listed)", () => {
     const help = getModelMap(new Map(), undefined, undefined, false);
-    expect(help).not.toContain("SNAPSHOT:");
+    expect(help).toContain("SNAPSHOT\n");
   });
 });
 

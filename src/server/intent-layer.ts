@@ -141,8 +141,14 @@ export class IntentLayer {
     const firstWord = opStr.trim().split(/\s/)[0]?.toLowerCase();
     if (firstWord === "snapshot") {
       const result = await this.executeQuery(opStr.trim());
-      const text = typeof result === "string" ? result : result.text;
-      return { success: true, message: text };
+      if (typeof result === "string") {
+        return { success: true, message: result };
+      }
+      const opResult: OpResult = { success: true, message: result.text };
+      if (result.image) {
+        opResult.image = { base64: result.image.base64, mimeType: result.image.mimeType };
+      }
+      return opResult;
     }
 
     const parsed = parseOp(opStr);

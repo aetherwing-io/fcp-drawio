@@ -22,6 +22,7 @@ export function createServer(): { server: McpServer; intent: IntentLayer } {
     referenceCard: {
       sections: buildReferenceCardSections(),
     },
+    extensions: ["drawio"],
   });
 
   return { server, intent };

@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "fcp-drawio": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"]
+    "drawio": {
+      "command": "npx",
+      "args": ["-y", "@aetherwing/fcp-drawio"]
     }
   }
 }

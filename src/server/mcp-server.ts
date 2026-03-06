@@ -23,6 +23,7 @@ export function createServer(): { server: McpServer; intent: IntentLayer } {
       sections: buildReferenceCardSections(),
     },
     extensions: ["drawio"],
+    instructions: "FCP draw.io server for creating and editing draw.io diagrams programmatically. Use drawio_session to create or open a diagram, drawio to add/modify/remove shapes, connections, and layouts, drawio_query to inspect diagram state, and drawio_help for the full verb reference. Start every interaction with drawio_session.",
   });
 
   return { server, intent };
